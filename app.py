@@ -37,6 +37,13 @@ API_BASE = "https://api.deepseek.com/chat/completions"
 
 SUBS = {}
 APPROVALS = {}
+
+# 桌面版会把自己「显示窗口」的函数挂到这里，/api/show 就能把主窗口叫回来
+SHOW_HOOK = None
+
+# 桌面外壳：页面请求「把这个项目另开一个窗口」时，把 pid 排进这个队列
+OPEN_REQUESTS = []
+
 LOCK = threading.Lock()
 
 
@@ -1049,6 +1056,22 @@ class H(BaseHTTPRequestHandler):
                 return self.send(200, {"ok": True, "draft": obj})
             except Exception as exc:  # noqa: BLE001
                 return self.send(500, {"ok": False, "error": str(exc)[:300]})
+
+        if path == "/api/open_window":
+            try:
+                pid = int(b.get("pid") or 1)
+            except Exception:  # noqa: BLE001
+                pid = 1
+            OPEN_REQUESTS.append(pid)
+            return self.send(200, {"ok": True, "queued": pid})
+
+        if path == "/api/show":
+            if callable(SHOW_HOOK):
+                try:
+                    SHOW_HOOK()
+                except Exception:  # noqa: BLE001
+                    pass
+            return self.send(200, {"ok": True})
 
         if path == "/api/image":
             try:

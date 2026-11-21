@@ -29,9 +29,14 @@
   .proj{margin-bottom:16px}
   .proj select{width:100%;background:var(--rail2);border:1px solid #24314a;color:#e2e8f0;
     border-radius:10px;padding:9px 10px;font-size:13px;outline:none}
+  .proj .projrow{display:flex;gap:6px;align-items:flex-start}
+  .proj .projrow .add{flex:1}
   .proj .add{margin-top:8px;width:100%;background:transparent;border:1px dashed #2f3f5c;
     color:#93a4bf;border-radius:10px;padding:7px;font-size:12px;cursor:pointer}
   .proj .add:hover{border-color:var(--accent);color:#dbe6f7}
+  .proj .newwin{margin-top:8px;width:40px;background:transparent;border:1px dashed #2f3f5c;
+    color:#93a4bf;border-radius:10px;padding:7px 0;font-size:13px;cursor:pointer}
+  .proj .newwin:hover{border-color:var(--accent);color:#dbe6f7}
   .nav{display:flex;flex-direction:column;gap:4px;margin-top:6px}
   .nav button{display:flex;align-items:center;background:transparent;border:0;
     color:#a9b7cd;text-align:left;padding:10px 12px;border-radius:10px;font-size:13.5px;cursor:pointer}
@@ -223,7 +228,10 @@
     </div>
     <div class="proj">
       <select id="projSel"></select>
-      <button class="add" id="btnNewProj">+ 新建项目</button>
+      <div class="projrow">
+        <button class="add" id="btnNewProj">+ 新建项目</button>
+        <button class="newwin" id="btnNewWindow" title="把这个项目单独开一个窗口（桌面版）">⧉</button>
+      </div>
     </div>
     <nav class="nav">
       <button data-view="team" class="on">👥　我的团队</button>
@@ -828,6 +836,15 @@ $("#btnSaveEmp").onclick = async () => {
     await load(S.pid);
     toast(S.editId ? "改好了" : "入职成功");
   }catch(err){ toast(err.message); }
+};
+
+$("#btnNewWindow").onclick = async () => {
+  try {
+    const r = await postJSON("/api/open_window", {pid: S.pid});
+    toast(r && r.queued ? "正在开新窗口…" : "请用桌面版打开");
+  } catch (e) {
+    toast("请用桌面版打开（双击小肥鱼AI公司.exe）");
+  }
 };
 
 $("#btnNewProj").onclick = () => {
