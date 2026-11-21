@@ -55,6 +55,17 @@
 
 服务端现拼文件，不依赖 Word、不依赖第三方库。
 
+## 出图（图像岗）
+
+员工的「修改」弹窗里有个勾：**出图岗，它先写提示词，再由系统把图画出来**。
+
+流程：模型先按职责把要求写成一段英文提示词 → 系统拿这段词去出图 → 图存到 `images/`，消息流里直接显示，点图可放大 → 任务成品末尾自动带 `## 配图`。
+
+- 引擎：先试 `api.a0.dev`（免 key），失败自动换 `image.pollinations.ai`（也免 key）。
+- 免费接口有频控，偶发 `402/500` 会记一条「出图失败：…」但**不中断任务**，重跑一次通常就好。
+- 想指定尺寸：`POST /api/image {prompt, size:"1024x1024"}`（竖图 `768x1344`、横图 `1344x768`）。
+- 图片按扩展名给 Content-Type（jpg/png/webp/gif），浏览器直接显示。
+
 ## 钱怎么算
 
 - 模型 `deepseek-chat`（员工里可改 `deepseek-reasoner`）。
@@ -81,6 +92,7 @@
 - `GET /api/dashboard?scope=project|all&pid=` 老板看板数据
 - `POST /api/tasks`、`/api/tasks/{id}/start|delete`、`/api/steps/{sid}/approve|reject`
 - `GET /api/events/{tid}` SSE 实时流
+- `POST /api/image` 出图（`prompt`、`size`）→ `{ok,file,url}`；`GET /images/<name>` 取图
 
 ## 已知限制
 
@@ -88,6 +100,7 @@
 - 「并排」目前仍是同进程排队，界面按并行展示；真并发以后改。
 - 记忆是「最近若干条 + 关键词」，不是向量检索。
 - 导出只有 Word / Markdown，没有 PDF（要 PDF 先用 Word 打开另存）。
+- 出图用免费公共接口，画质一般（512—1024）、有频控上限；要稳定就换自己的 key（改 `gen_image` 里的通道即可）。
 
 ## 从源码跑 / 打包
 

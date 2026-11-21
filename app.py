@@ -7,7 +7,9 @@ import re
 import sqlite3
 import threading
 import time
+import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Queue
@@ -26,6 +28,7 @@ else:
 
 DB_PATH = os.path.join(BASE, "company.db")
 UI_PATH = os.path.join(RES, "ui", "index.html")
+IMAGE_DIR = os.path.join(BASE, "images")
 PORT = int(os.environ.get("AC_PORT", "8811"))
 
 PRICE_IN = 2.0
@@ -231,6 +234,8 @@ PRESET_SEED = [
     ("论文报告", "🧱", "结构编辑", "写作", "只调结构与衔接：检查每段是否只讲一件事、小标题是否平行、段落之间是否有过渡句。输出修改后的完整正文，不改观点。", "写手的正文", "修订后的完整正文"),
     ("论文报告", "🧐", "审稿", "审核", "负责挑错：找出空话、无依据的断言、结构重复、字数不足的问题，逐条指出并给出改法，最后给出评分（内容/结构/语言 各 10 分）。", "写手的正文", "问题清单（按严重程度排序）+ 三项评分"),
     ("论文报告", "🔖", "引用校对", "审核", "检查文中的数据与引用口径：哪些是断言、哪些有出处、哪些需要标注“待核实”，列出需要补注的句子清单。", "正文", "需补出处清单"),
+    ("图像", "🎯", "画面构思", "策划", "把老板要的画面拆成 3 个可选方向（主体 / 场景 / 风格），每个方向写一句能直接出图的英文提示词，说明各适合什么用途。", "任务的画面要求", "3 个方向 + 英文提示词 + 用途建议"),
+    ("图像", "🎬", "出图师", "执行", "你只做一件事：把画面要求写成一段英文提示词（主体、风格、构图、配色、光线、背景），只输出提示词本身，不要解释。", "画面要求或中文描述", "一段英文提示词"),
     ("短视频", "🎬", "钩子编剧", "策划", "为 30 秒短视频写 5 个不同方向的开场前三秒（反差、提问、反常识、现场声、结果前置），每个配一句理由。", "产品/主题简介", "5 个开场方案 + 推荐"),
     ("短视频", "🎞", "分镜师", "策划", "把选定脚本拆成 8—12 个镜头，标注时长、画面内容、运镜、字幕、声音；总时长控制准确。", "脚本或开场方案", "分镜表（Markdown 表格）"),
     ("短视频", "💬", "文案", "写作", "写口播文案：短句为主，一句一个信息点，避免书面语；给出 3 个不同语气的版本（真诚/犀利/轻松）。", "主题与卖点", "3 版口播稿"),
@@ -286,10 +291,16 @@ def init_db():
         c.execute("ALTER TABLE presets ADD COLUMN mine INT DEFAULT 0")
     if "src_emp" not in cols("presets"):
         c.execute("ALTER TABLE presets ADD COLUMN src_emp INT")
+    if "kind" not in cols("employees"):
+        c.execute("ALTER TABLE employees ADD COLUMN kind TEXT DEFAULT 'text'")
+    if "kind" not in cols("presets"):
+        c.execute("ALTER TABLE presets ADD COLUMN kind TEXT DEFAULT 'text'")
 
     if c.execute("SELECT COUNT(*) n FROM presets").fetchone()["n"] == 0:
         c.executemany("INSERT INTO presets(family,emoji,title,tag,duty,input_spec,output_spec)"
                       " VALUES(?,?,?,?,?,?,?)", PRESET_SEED)
+        c.execute("UPDATE presets SET kind='image' WHERE title IN ('出图师')")
+        c.execute("UPDATE presets SET emoji='🖼' WHERE family='图像' AND title='画面构思'")
     if c.execute("SELECT COUNT(*) n FROM projects").fetchone()["n"] == 0:
         c.execute("INSERT INTO projects(name,kind,goal,created_at) VALUES(?,?,?,?)",
                   ("我的第一个项目", "论文报告", "先拿一个真实任务试试", now()))
@@ -345,6 +356,77 @@ def call_model(model, messages, temperature=0.7, max_tokens=4096):
     text = payload["choices"][0]["message"]["content"]
     u = payload.get("usage", {}) or {}
     return text, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), ms
+
+
+def _img_ext(data):
+    if data[:4] == b"\x89PNG":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    return ""
+
+
+def _fetch(url, timeout=180):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 ai-company/4.1"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def gen_image(prompt, size="1024x1024", seed=0):
+    """出图：先试 a0.dev（免 key），失败再试 pollinations。返回文件名。"""
+    prompt = re.sub(r"```", "", (prompt or "")).strip()[:900]
+    if not prompt:
+        raise RuntimeError("提示词是空的")
+    try:
+        w, h = [int(x) for x in str(size).lower().split("x")]
+    except Exception:  # noqa: BLE001
+        w, h = 1024, 1024
+    aspect = "1:1"
+    if w > h * 1.2:
+        aspect = "16:9"
+    elif h > w * 1.2:
+        aspect = "9:16"
+
+    errs = []
+    data = b""
+    # 通道 1：a0.dev
+    try:
+        u1 = "https://api.a0.dev/assets/image?text=" + urllib.parse.quote(prompt) + "&aspect=" + aspect
+        data = _fetch(u1, 120)
+        if not _img_ext(data):
+            errs.append("a0 返回的不是图片")
+            data = b""
+    except Exception as exc:  # noqa: BLE001
+        errs.append("a0: %s" % str(exc)[:120])
+
+    # 通道 2：pollinations（不带 seed，带了会被判付费）
+    if not data:
+        try:
+            q = urllib.parse.urlencode({"width": w, "height": h, "nologo": "true"})
+            u2 = ("https://image.pollinations.ai/prompt/"
+                  + urllib.parse.quote(prompt, safe="") + "?" + q)
+            data = _fetch(u2, 180)
+            if not _img_ext(data):
+                errs.append("pollinations 返回的不是图片")
+                data = b""
+        except Exception as exc:  # noqa: BLE001
+            errs.append("pollinations: %s" % str(exc)[:120])
+
+    if not data:
+        raise RuntimeError("出图失败 → " + "；".join(errs or ["未知原因"]))
+    if len(data) < 2048:
+        raise RuntimeError("图片太小（%d 字节），判定失败" % len(data))
+
+    ext = _img_ext(data)
+    name = "img_%s_%s.%s" % (time.strftime("%Y%m%d_%H%M%S"), uuid.uuid4().hex[:6], ext)
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+    with open(os.path.join(IMAGE_DIR, name), "wb") as f:
+        f.write(data)
+    return name
 
 
 def cost_of(tin, tout):
@@ -465,6 +547,17 @@ def run_task(task_id):
                  tokens_out=tout, cost=cc, finished_at=now())
         bump_task(task_id, cc, tin, tout)
 
+        if (emp.get("kind") or "text") == "image":
+            log_msg(task_id, st["id"], "系统", emp["title"], "note", "按提示词开始出图…")
+            try:
+                img = gen_image(text, task["image_size"] if "image_size" in task.keys() else "1024x1024")
+                log_msg(task_id, st["id"], emp["title"], "老板", "image", img)
+                set_step(st["id"], output=text + "\n\n![图](images/" + img + ")")
+                text = text + "\n\n![图](images/" + img + ")"
+            except Exception as exc:  # noqa: BLE001
+                log_msg(task_id, st["id"], "系统", emp["title"], "note",
+                        "出图失败：%s" % str(exc)[:200])
+
         want = 0
         m = re.search(r"(\d{3,5})\s*字", task["goal"] or "")
         if m:
@@ -510,6 +603,12 @@ def run_task(task_id):
 
     prose = [r["text"] for r in reply_rows(task_id) if r["prose"]]
     deliver = max(prose, key=len) if prose else (best["text"] or draft)
+    c = db()
+    imgs = [r["content"] for r in c.execute(
+        "SELECT content FROM messages WHERE task_id=? AND kind='image' ORDER BY id", (task_id,)).fetchall()]
+    c.close()
+    if imgs:
+        deliver = deliver + "\n\n---\n\n## 配图\n" + "\n".join("![图](images/%s)" % i for i in imgs)
     reviews = [x["text"] for x in reply_rows(task_id) if "问题清单" in x["text"]]
     if reviews and deliver not in reviews:
         deliver = deliver + "\n\n---\n\n## 附：审稿意见\n" + reviews[0]
@@ -757,6 +856,24 @@ class H(BaseHTTPRequestHandler):
                 with LOCK:
                     SUBS.pop(tid, None)
             return
+
+        if path.startswith("/images/"):
+            name = os.path.basename(path)
+            fp = os.path.join(IMAGE_DIR, name)
+            if os.path.isfile(fp):
+                with open(fp, "rb") as f:
+                    data = f.read()
+                low = name.lower()
+                ctype = ("image/png" if low.endswith(".png") else
+                         "image/webp" if low.endswith(".webp") else
+                         "image/gif" if low.endswith(".gif") else "image/jpeg")
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                self.wfile.write(data)
+                return
         return self.send(404, {"error": "not found"})
 
     # ---------- POST
@@ -778,11 +895,11 @@ class H(BaseHTTPRequestHandler):
             c = db()
             cur = c.execute(
                 "INSERT INTO employees(project_id,name,title,emoji,duty,input_spec,output_spec,"
-                "model,memory,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "model,memory,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (b.get("project_id"), b.get("name") or "新人", b.get("title") or "员工",
                  b.get("emoji") or "🧑", b.get("duty", ""), b.get("input_spec", ""),
                  b.get("output_spec", ""), b.get("model", "deepseek-chat"),
-                 int(b.get("memory", 1)), now()))
+                 int(b.get("memory", 1)), now(), b.get("kind") or "text"))
             eid = cur.lastrowid
             if b.get("save_preset"):
                 c.execute("INSERT INTO presets(family,emoji,title,tag,duty,input_spec,output_spec,"
@@ -802,7 +919,7 @@ class H(BaseHTTPRequestHandler):
                 c.execute("DELETE FROM employees WHERE id=?", (eid,))
             else:
                 fields = ["name", "title", "emoji", "duty", "input_spec",
-                          "output_spec", "model", "memory"]
+                          "output_spec", "model", "memory", "kind"]
                 sets, vals = [], []
                 for f in fields:
                     if f in b:
@@ -840,6 +957,14 @@ class H(BaseHTTPRequestHandler):
             c.commit()
             c.close()
             return self.send(200, {"ok": True})
+
+        if path == "/api/image":
+            try:
+                name = gen_image(b.get("prompt") or "", b.get("size") or "1024x1024",
+                                 int(b.get("seed") or 0))
+                return self.send(200, {"ok": True, "file": name, "url": "/images/" + name})
+            except Exception as exc:  # noqa: BLE001
+                return self.send(500, {"ok": False, "error": str(exc)[:300]})
 
         if path.startswith("/api/memory/"):
             eid = int(path.rstrip("/").split("/")[-1])

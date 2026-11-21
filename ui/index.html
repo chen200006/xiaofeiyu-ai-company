@@ -165,6 +165,9 @@
   .addrow{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
 
 
+  /* 生成的图 */
+  .genimg{max-width:420px;width:100%;border-radius:10px;border:1px solid var(--line);
+    display:block;cursor:zoom-in;background:#fff}
   /* 记忆管理 */
   .memlist{max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:9px;
     padding:6px 8px;background:#fbfcff;display:flex;flex-direction:column;gap:4px}
@@ -312,6 +315,10 @@
         </select>
       </div>
     </div>
+    <label class="fl" style="display:flex;align-items:center;gap:8px;margin-top:12px">
+      <input type="checkbox" id="e-isimg" style="width:auto">
+      出图岗：它先写提示词，再由系统把图画出来
+    </label>
     <div id="e-membox" style="display:none;margin-top:14px">
       <label class="fl">他记住的事（会带进每一次任务和聊天）</label>
       <div class="memlist" id="e-memlist"></div>
@@ -525,7 +532,7 @@ async function selectTask(id){
 }
 
 function msgHTML(m){
-  const kname={instruction:"派活",reply:"产出",note:"系统",deliverable:"成品"}[m.kind]||m.kind;
+  const kname={instruction:"派活",reply:"产出",note:"系统",deliverable:"成品",image:"出图"}[m.kind]||m.kind;
   const cost=(m.tokens_in||m.tokens_out)
     ? `<span>${num(m.tokens_in)} 入 / ${num(m.tokens_out)} 出</span>
        <span style="color:#b45309">${money(m.cost)} 元</span><span style="opacity:.6">${m.ms||0}ms</span>`:"";
@@ -534,7 +541,10 @@ function msgHTML(m){
   return `<div class="msg k-${m.kind}">
     <div class="hd"><span class="who">${esc(m.sender)} → ${esc(m.receiver)}</span>
       <span class="badge">${kname}</span><span class="meta">${copy}${cost}</span></div>
-    <div class="bd">${esc(m.content)}</div></div>`;
+    <div class="bd">${m.kind==="image"
+      ? `<img class="genimg" src="/images/${encodeURIComponent(m.content)}"
+              alt="生成图" onclick="window.open(this.src,'_blank')">`
+      : esc(m.content)}</div></div>`;
 }
 
 function renderDetail(){
@@ -747,6 +757,8 @@ function openEmp(id, preset){
   $("#e-out").value   = e ? (e.output_spec||"") : (preset?preset.output_spec:"");
   $("#e-model").value = e ? e.model : "deepseek-chat";
   $("#e-memory").value= e ? String(e.memory) : "1";
+  const ik=$("#e-isimg");
+  if(ik) ik.checked = e ? (e.kind==="image") : !!(preset && preset.kind==="image");
   S.emoji = e ? (e.emoji||"🧑") : (preset?(preset.emoji||"🧑"):"🧑");
   const sp=$("#e-savepreset"); if(sp) sp.checked = !id;
   loadMem(id);
@@ -767,6 +779,7 @@ $("#btnSaveEmp").onclick = async () => {
     emoji: S.emoji || "🧑", duty: $("#e-duty").value.trim(),
     input_spec: $("#e-in").value.trim(), output_spec: $("#e-out").value.trim(),
     model: $("#e-model").value, memory: Number($("#e-memory").value),
+    kind: ($("#e-isimg") && $("#e-isimg").checked) ? "image" : "text",
     project_id: S.pid, save_preset: $("#e-savepreset").checked
   };
   if(!body.title) return toast("至少写个职位名");
