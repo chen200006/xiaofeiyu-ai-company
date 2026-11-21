@@ -3,6 +3,7 @@ company.db
 company.db-wal
 company.db-shm
 key.txt
+images/
 
 # 打包产物
 build/
@@ -13,5 +14,4 @@ dist/
 # Python
 __pycache__/
 *.pyc
-.venv/images/
-images/
+.venv/
