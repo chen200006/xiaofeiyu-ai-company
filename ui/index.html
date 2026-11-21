@@ -541,6 +541,9 @@ async function load(pid){
   S.projects=st.projects; S.pid=st.pid; S.employees=st.employees; S.tasks=st.tasks;
   S.stats=st.stats||[];
   S.has_key = !!st.has_key;
+  S.deep = !!st.deep; S.modelName = st.model || "deepseek-chat";
+  const mn = $("#modelName");
+  if (mn) { mn.textContent = S.deep ? "deepseek-reasoner" : S.modelName; mn.title = S.deep ? "所有调用强制深度思考" : ""; }
   renderProj(); renderTeam(); renderTasks();
   renderKeyBar();
   $("#todayCost").textContent = money(S.stats.reduce((a,r)=>a+(r.cost||0),0)) + " 元";
@@ -663,7 +666,10 @@ function msgHTML(m){
     ? `<button class="btn sm ghost" data-copy="${m.id}" style="padding:1px 6px">复制</button>`:"";
   return `<div class="msg k-${m.kind}">
     <div class="hd"><span class="who">${esc(m.sender)} → ${esc(m.receiver)}</span>
-      <span class="badge">${kname}</span><span class="meta">${copy}${cost}</span></div>
+      <span class="badge">${kname}</span>
+      ${m.model === "deepseek-reasoner"
+        ? '<span class="badge" style="background:#ede9fe;color:#6d28d9">🧠 深度思考</span>' : ""}
+      <span class="meta">${copy}${cost}</span></div>
     <div class="bd">${m.kind==="image"
       ? `<img class="genimg" src="/images/${encodeURIComponent(m.content)}"
               alt="生成图" onclick="window.open(this.src,'_blank')">`

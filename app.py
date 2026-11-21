@@ -33,6 +33,12 @@ PORT = int(os.environ.get("AC_PORT", "8811"))
 
 PRICE_IN = 2.0
 PRICE_OUT = 3.0
+# 深度思考：所有模型调用默认走 reasoner（可用 AC_DEEP=0 关闭）
+DEEP_THINK = os.environ.get("AC_DEEP", "1") != "0"
+MODEL_CHAT = "deepseek-chat"
+MODEL_DEEP = "deepseek-reasoner"
+PRICES = {MODEL_CHAT: (2.0, 3.0), MODEL_DEEP: (4.0, 16.0)}
+_TLS = threading.local()
 API_BASE = "https://api.deepseek.com/chat/completions"
 
 SUBS = {}
@@ -301,6 +307,8 @@ def init_db():
         c.execute("ALTER TABLE presets ADD COLUMN mine INT DEFAULT 0")
     if "src_emp" not in cols("presets"):
         c.execute("ALTER TABLE presets ADD COLUMN src_emp INT")
+    if "model" not in [r[1] for r in c.execute("PRAGMA table_info(messages)").fetchall()]:
+        c.execute("ALTER TABLE messages ADD COLUMN model TEXT DEFAULT ''")
     if "boundary" not in cols("employees"):
         c.execute("ALTER TABLE employees ADD COLUMN boundary TEXT DEFAULT ''")
     if "kind" not in cols("employees"):
@@ -339,36 +347,60 @@ def log_msg(task_id, step_id, sender, receiver, kind, content,
     c = db()
     cur = c.execute(
         "INSERT INTO messages(task_id,step_id,sender,receiver,kind,content,"
-        "tokens_in,tokens_out,cost,ms,ts) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        (task_id, step_id, sender, receiver, kind, content, tin, tout, cost, ms, now()))
+        "tokens_in,tokens_out,cost,ms,ts,model) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        (task_id, step_id, sender, receiver, kind, content, tin, tout, cost, ms, now(),
+         getattr(_TLS, "model", "")))
     mid = cur.lastrowid
     c.commit()
     c.close()
     publish(task_id, {"type": "message", "data": {
         "id": mid, "task_id": task_id, "step_id": step_id, "sender": sender,
         "receiver": receiver, "kind": kind, "content": content, "tokens_in": tin,
-        "tokens_out": tout, "cost": round(cost, 4), "ms": ms, "ts": now()}})
+        "tokens_out": tout, "cost": round(cost, 4), "ms": ms, "ts": now(),
+        "model": getattr(_TLS, "model", "")}})
     return mid
 
 
 # ---------------------------------------------------------------- 模型
 
 
-def call_model(model, messages, temperature=0.7, max_tokens=4096):
-    body = json.dumps({"model": model or "deepseek-chat", "messages": messages,
-                       "temperature": temperature, "max_tokens": max_tokens,
-                       "stream": False}).encode("utf-8")
-    req = urllib.request.Request(API_BASE, data=body, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Authorization", "Bearer " + API_KEY)
-    t0 = time.time()
-    with urllib.request.urlopen(req, timeout=600) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
-    ms = int((time.time() - t0) * 1000)
-    text = payload["choices"][0]["message"]["content"]
-    u = payload.get("usage", {}) or {}
-    return text, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), ms
+def call_model(model, messages, temperature=0.7, max_tokens=4096, deep=None):
+    used = model if model in PRICES else MODEL_CHAT
+    if deep is None:
+        deep = DEEP_THINK and used != MODEL_DEEP
+    if deep:
+        used = MODEL_DEEP
+    body = {"model": used, "messages": messages, "stream": False,
+            "max_tokens": max(max_tokens, 2048) if used == MODEL_DEEP else max_tokens}
+    if used != MODEL_DEEP:
+        body["temperature"] = temperature
+    data = json.dumps(body).encode("utf-8")
 
+    def _post(mdl):
+        payload_body = dict(body, model=mdl)
+        req = urllib.request.Request(API_BASE, data=json.dumps(payload_body).encode("utf-8"),
+                                     method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Authorization", "Bearer " + API_KEY)
+        with urllib.request.urlopen(req, timeout=900) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    t0 = time.time()
+    try:
+        payload = _post(used)
+    except urllib.error.HTTPError as exc:
+        if used != MODEL_DEEP:
+            raise
+        # reasoner 不可用时回落到普通模型，不让整单失败
+        used = MODEL_CHAT
+        payload = _post(used)
+    ms = int((time.time() - t0) * 1000)
+    msg = (payload.get("choices") or [{}])[0].get("message") or {}
+    text = msg.get("content") or ""
+    _TLS.model = used
+    _TLS.reason = msg.get("reasoning_content") or ""
+    u = payload.get("usage", {}) or {}
+    return (text, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), ms)
 
 def _img_ext(data):
     if data[:4] == b"\x89PNG":
@@ -442,7 +474,9 @@ def gen_image(prompt, size="1024x1024", seed=0):
 
 
 def cost_of(tin, tout):
-    return tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT
+    model = getattr(_TLS, "model", MODEL_CHAT)
+    pi, po = PRICES.get(model, (PRICE_IN, PRICE_OUT))
+    return tin / 1e6 * pi + tout / 1e6 * po
 
 
 def is_prose(emp):
@@ -478,6 +512,9 @@ def emp_system(emp, memories):
         "【职责】" + (emp["duty"] or "按岗位名自行理解。"),
         "【输入】" + (emp["input_spec"] or "上游交来的材料。"),
         "【输出】" + (emp["output_spec"] or "直接给出可用的工作成果。"),
+        "",
+        "【遇到模糊需求时】老板的要求可能不完整。不要停工、不要反问，先按最合理的假设继续做，"
+        "并在成果最前面单独一行写「假设：…」，把你的假设列清楚（最多 3 条）。宁可先交付再被纠正，也不要交白卷。",
         "",
         "【格式】只输出工作成果本身：不寒暄、不复述任务、不写「好的我来」、不解释你在干什么。中文作答。",
     ]
@@ -793,7 +830,8 @@ class H(BaseHTTPRequestHandler):
                 "WHERE m.kind='reply' AND t.project_id=? GROUP BY m.sender ORDER BY cost DESC",
                 (pid,)).fetchall()]
             c.close()
-            return self.send(200, {"projects": projects, "pid": pid, "employees": emps,
+            return self.send(200, {"deep": DEEP_THINK, "model": MODEL_DEEP if DEEP_THINK else MODEL_CHAT,
+                                   "projects": projects, "pid": pid, "employees": emps,
                                    "tasks": tasks, "stats": stats, "has_key": bool(API_KEY)})
 
         if path == "/api/presets":
@@ -1091,7 +1129,8 @@ class H(BaseHTTPRequestHandler):
             if not API_KEY:
                 return self.send(400, {"error": "没有 API key，先点右上角 🔑 Key"})
             try:
-                return self.send(200, {"ok": True, "report": agency_understand(text)})
+                return self.send(200, {"ok": True, "report": agency_understand(text),
+                                       "model": getattr(_TLS, "model", "")})
             except Exception as exc:  # noqa: BLE001
                 return self.send(500, {"ok": False, "error": str(exc)[:300]})
 
@@ -1103,7 +1142,8 @@ class H(BaseHTTPRequestHandler):
             if not API_KEY:
                 return self.send(400, {"error": "没有 API key"})
             try:
-                return self.send(200, {"ok": True, "more": agency_ask(text, answers)})
+                return self.send(200, {"ok": True, "more": agency_ask(text, answers),
+                                       "model": getattr(_TLS, "model", "")})
             except Exception as exc:  # noqa: BLE001
                 return self.send(500, {"ok": False, "error": str(exc)[:300]})
 
@@ -1121,7 +1161,7 @@ class H(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001
                 return self.send(500, {"ok": False, "error": str(exc)[:300]})
             team = [t for t in (obj.get("team") or []) if isinstance(t, dict)][:6]
-            return self.send(200, {"ok": True, "draft": {
+            return self.send(200, {"ok": True, "model": getattr(_TLS, "model", ""), "draft": {
                 "task": obj.get("task") or {},
                 "team": team,
                 "order": [i for i in (obj.get("order") or []) if isinstance(i, int)],
@@ -1334,6 +1374,8 @@ CHIEF_SYS = """你是一家「一人公司」的指挥中心（Chief of Staff）
    video 问平台/时长/是否要分镜；image 问风格/尺寸/用途；plan 问对象/篇幅/是否要预算；
    code 问运行环境/输入输出；data 问数据来源/期限。
 5) 判断是否还值得再追一轮（ask_more：需求模糊、缺关键约束时为 true）。
+   判定「模糊」的标准：没说清交付物形态、没说清给谁看/给谁用、没说清尺度（字数/时长/尺寸）、
+   没说清能不能用外部素材。命中任意两条就把 ask_more 设为 true，并让问题直接对准缺失的那一项。
 不写正文。只输出 JSON，不要代码块围栏：
 {"task_type":"paper","type_label":"报告/论文","why":"...","understanding":"...","deliverable":"...",
  "budget_suggest":1.5,"budget_reason":"...","questions":[{"q":"...","options":["...","..."]}],"ask_more":true}
