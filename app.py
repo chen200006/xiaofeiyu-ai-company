@@ -1084,6 +1084,111 @@ class H(BaseHTTPRequestHandler):
                     pass
             return self.send(200, {"ok": True})
 
+        if path == "/api/agency/understand":
+            text = (b.get("text") or "").strip()
+            if not text:
+                return self.send(400, {"error": "先写一句你要干什么"})
+            if not API_KEY:
+                return self.send(400, {"error": "没有 API key"})
+            try:
+                return self.send(200, {"ok": True, "report": chief_understand(text)})
+            except Exception as exc:  # noqa: BLE001
+                return self.send(500, {"ok": False, "error": str(exc)[:300]})
+
+        if path == "/api/agency/build":
+            text = (b.get("text") or "").strip()
+            pid = int(b.get("pid") or 1)
+            answers = b.get("answers") or ""
+            if not text:
+                return self.send(400, {"error": "先写一句你要干什么"})
+            if not API_KEY:
+                return self.send(400, {"error": "没有 API key"})
+            try:
+                obj, cands = agency_build(pid, text, answers)
+            except Exception as exc:  # noqa: BLE001
+                return self.send(500, {"ok": False, "error": str(exc)[:300]})
+            task = obj.get("task") or {}
+            team = [t for t in (obj.get("team") or []) if isinstance(t, dict)][:5]
+            if not team:
+                return self.send(500, {"ok": False, "error": "HR 没给出任何岗位"})
+            emp_index = {c["id"]: c for c in cands if c["kind"] == "emp"}
+            pre_index = {c["id"]: c for c in cands if c["kind"] == "preset"}
+            c = db()
+            made = []
+            for t in team:
+                eid = None
+                r_emp = t.get("reuse_emp_id")
+                r_pre = t.get("reuse_preset_id")
+                if r_emp and int(r_emp) in emp_index:
+                    eid = int(r_emp)
+                    row = c.execute("SELECT duty,boundary FROM employees WHERE id=?",
+                                    (eid,)).fetchone()
+                    made.append({"mode": "reuse", "emp_id": eid,
+                                 "title": emp_index[eid]["title"],
+                                 "duty": (row["duty"] or "")[:120] if row else "",
+                                 "boundary": (row["boundary"] or "")[:200] if row else ""})
+                else:
+                    fields = None
+                    if r_pre and int(r_pre) in pre_index:
+                        row = c.execute("SELECT * FROM presets WHERE id=?", (int(r_pre),)).fetchone()
+                        if row:
+                            fields = (row["title"], row["emoji"], row["duty"],
+                                      row["input_spec"], row["output_spec"],
+                                      (row["kind"] or "text") or "text",
+                                      "只做本岗清单里的事；不重写别人的正文；不替其他岗位下结论")
+                    if fields is None:
+                        fields = (str(t.get("role_title") or "新员工")[:20],
+                                  str(t.get("emoji") or "🧑")[:4],
+                                  str(t.get("duty") or "")[:600],
+                                  str(t.get("input_spec") or "")[:300],
+                                  str(t.get("output_spec") or "")[:300],
+                                  ("image" if t.get("kind") == "image" else "text"),
+                                  str(t.get("boundary") or "")[:400])
+                    cur = c.execute(
+                        "INSERT INTO employees(project_id,name,title,emoji,duty,input_spec,"
+                        "output_spec,model,memory,created_at,kind,boundary)"
+                        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (pid, "小" + fields[0][:2], fields[0], fields[1], fields[2], fields[3],
+                         fields[4], "deepseek-chat", 1, now(), fields[5], fields[6]))
+                    eid = cur.lastrowid
+                    made.append({"mode": ("preset" if r_pre else "new"), "emp_id": eid,
+                                 "title": fields[0], "duty": (fields[2] or "")[:120],
+                                 "boundary": fields[6]})
+            # 任务
+            cur = c.execute(
+                "INSERT INTO tasks(project_id,title,goal,accept,budget,mode,status,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (pid, str(task.get("title") or text)[:40], str(task.get("goal") or text),
+                 str(task.get("accept") or ""), float(task.get("budget") or 2.0),
+                 "relay", "pending", now()))
+            tid = cur.lastrowid
+            order = [i for i in (obj.get("order") or []) if isinstance(i, int) and 0 <= i < len(made)]
+            if not order:
+                order = list(range(len(made)))
+            for idx, i in enumerate(order):
+                c.execute("INSERT INTO steps(task_id,idx,emp_id,status,needs_approval)"
+                          " VALUES(?,?,?,?,?)",
+                          (tid, idx, made[i]["emp_id"], "pending", 1 if idx == len(order) - 1 else 0))
+            c.execute("INSERT INTO messages(task_id,step_id,kind,sender,content,"
+                      "tokens_in,tokens_out,cost,ms,ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      (tid, None, "note", "指挥中心",
+                       "我理解的需求：%s\n\n交付物：%s" % (
+                           str(b.get("understanding") or "")[:400],
+                           str(task.get("goal") or "")[:400]),
+                       0, 0, 0, 0, now()))
+            c.execute("INSERT INTO messages(task_id,step_id,kind,sender,content,"
+                      "tokens_in,tokens_out,cost,ms,ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      (tid, None, "note", "HR",
+                       "组队完成：%s\n\n分工理由：%s" % (
+                           "、".join("%s（%s）" % (m["title"], {"new": "新建", "preset": "从岗位库招", "reuse": "复用现成"}[m["mode"]])
+                                    for m in made),
+                           str(obj.get("note") or "")[:300]),
+                       0, 0, 0, 0, now()))
+            c.commit()
+            c.close()
+            return self.send(200, {"ok": True, "task_id": tid, "staffed": made,
+                                   "order": order, "note": obj.get("note") or ""})
+
         if path == "/api/key":
             raw = (b.get("key") or "").strip()
             fp = os.path.join(BASE, "key.txt")
@@ -1255,6 +1360,93 @@ def _pick_port(start):
                 return p
     return start
 
+
+
+# ---------- 指挥中心 / HR ----------
+CHIEF_SYS = """你是一家「一人公司」的指挥中心（Chief of Staff）。
+老板会用一句大白话提需求，你要做三件事：
+1) 用老板听得懂的语言复述你理解的需求（不超过 80 字），说清要交付什么成品；
+2) 只问最多 3 个真正会改变做法的问题（能自己判断的别问），每题给 2—4 个候选答案；
+3) 不许自己动笔写正文，你的职责只是「听懂 + 问清」。
+只输出 JSON，不要解释、不要代码块围栏：
+{"understanding": "...", "deliverable": "...", "questions": [{"q": "...", "options": ["...", "..."]}]}
+"""
+
+BUILD_SYS = """你同时扮演两个角色，按顺序完成，只输出一个 JSON：
+
+【角色一 · 指挥中心】把老板的需求拆成一份能派的活：
+task.title ≤ 18 字；task.goal 写清交付物与判断标准；task.accept 写 3—5 条可检查的验收标准；
+task.budget 是预估花费上限（人民币，普通 3000 字报告约 1 元，多步流水线可给 2—3 元）。
+
+【角色二 · HR】按这份活组一个项目组：
+- 先看「候选人」清单，能复用就复用（填 reuse_emp_id 或 reuse_preset_id，其余字段可省）；
+- 没有合适的就自己新建（写 role_title、duty、input_spec、output_spec、boundary）；
+- duty 必须只写「流水线上的一环」，并明确写「不负责什么」；
+- boundary 写最可能越界的 2—3 件事，用分号隔开，目的是让每个人互不干扰；
+- 每个岗位 emoji 只能从这些里选一个：🧭 🔍 📝 🧩 📊 📋 🎯 🎬 💬 🔎 📈 📚 🖼
+- kind 填 text 或 image（需要出图的岗位才填 image）；
+- 岗位数量 2—4 个，宁少勿多；不要安排「审稿 + 校对」这种职责重叠的两个岗；
+- order 给出建议执行顺序（team 的下标数组）。
+
+只输出 JSON：
+{"task": {"title": "...", "goal": "...", "accept": "...", "budget": 1.5},
+ "team": [{"role_title": "...", "emoji": "📝", "kind": "text",
+           "duty": "...", "input_spec": "...", "output_spec": "...", "boundary": "...",
+           "reuse_emp_id": null, "reuse_preset_id": null}],
+ "order": [0, 1],
+ "note": "一句话说明为什么这样分工"}
+"""
+
+
+def _json_obj(txt):
+    m = re.search(r"\{.*\}", txt or "", re.S)
+    if not m:
+        raise RuntimeError("模型没给出 JSON")
+    return json.loads(m.group(0))
+
+
+def agency_candidates(pid):
+    c = db()
+    emps = c.execute("SELECT id,title,duty FROM employees WHERE project_id=? ORDER BY id",
+                     (pid,)).fetchall()
+    pres = c.execute("SELECT id,title,tag,family FROM presets ORDER BY mine DESC, family, id").fetchall()
+    c.close()
+    lines = []
+    for r in emps:
+        lines.append({"kind": "emp", "id": r["id"], "title": r["title"],
+                      "brief": (r["duty"] or "")[:60]})
+    for r in pres:
+        lines.append({"kind": "preset", "id": r["id"], "title": r["title"],
+                      "brief": "%s · %s" % (r["family"] or "", r["tag"] or "")})
+    return lines
+
+
+def chief_understand(text):
+    txt, _ti, _to, _ms = call_model("deepseek-chat",
+                     [{"role": "system", "content": CHIEF_SYS},
+                      {"role": "user", "content": "老板的需求：%s" % text}],
+                     temperature=0.35, max_tokens=700)
+    obj = _json_obj(txt)
+    qs = obj.get("questions") or []
+    obj["questions"] = [{"q": str(q.get("q", ""))[:200],
+                         "options": [str(o)[:60] for o in (q.get("options") or [])][:4]}
+                        for q in qs[:3] if isinstance(q, dict) and q.get("q")]
+    obj["understanding"] = str(obj.get("understanding", ""))[:300]
+    obj["deliverable"] = str(obj.get("deliverable", ""))[:200]
+    return obj
+
+
+def agency_build(pid, text, answers):
+    cands = agency_candidates(pid)
+    cl = "\n".join("- %s #%s %s（%s）" % (c["kind"], c["id"], c["title"], c["brief"]) for c in cands[:90])
+    user = "老板的需求：%s\n\n老板对追问的回答：%s\n\n候选人清单：\n%s" % (
+        text, answers or "（没回答，按最合理默认处理）", cl)
+    txt, _ti, _to, _ms = call_model("deepseek-chat",
+                     [{"role": "system", "content": BUILD_SYS},
+                      {"role": "user", "content": user}],
+                     temperature=0.4, max_tokens=1800)
+    obj = _json_obj(txt)
+    return obj, cands
 
 def main():
     global PORT
