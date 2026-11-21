@@ -321,7 +321,7 @@
     </section>
 
     <section id="view-agency" style="display:none">
-      <div class="hint">用大白话说你要什么。指挥中心先听懂、跟你确认，然后交给 HR 组队——你只管点头。</div>
+      <div class="hint">用大白话说你要什么。指挥中心先判断这是哪类活、听懂、跟你确认，再交给 HR 按预算组队——你只管点头。</div>
 
       <div class="card" style="margin-bottom:14px">
         <div class="subhead" style="margin-top:0">① 说需求</div>
@@ -329,25 +329,27 @@
           style="width:100%;padding:12px 14px;border:1px solid #dbe3f0;border-radius:12px;
                  font-size:13.5px;line-height:1.7;resize:vertical;font-family:inherit"></textarea>
         <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
-          <button class="btn primary" id="btnAgGo">让指挥中心听懂</button>
-          <span class="hint" style="margin:0" id="ag-tip">大约花 0.002 元</span>
+          <button class="btn primary" id="btnAgGo">让指挥中心判断 + 听懂</button>
+          <span class="hint" style="margin:0" id="ag-tip">先判断题型，再决定问什么</span>
         </div>
       </div>
 
       <div class="card" id="ag-reportBox" style="margin-bottom:14px;display:none">
-        <div class="subhead" style="margin-top:0">② 指挥中心的理解（不对就回去改需求）</div>
+        <div class="subhead" style="margin-top:0">② 指挥中心的理解</div>
         <div id="ag-report"></div>
-        <div style="display:flex;gap:10px;margin-top:14px">
-          <button class="btn primary" id="btnAgBuild">确认，交给 HR</button>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
+          <button class="btn ghost" id="btnAgAsk">再追问一轮</button>
+          <button class="btn primary" id="btnAgBuild">按这个预算交给 HR</button>
           <button class="btn ghost" id="btnAgReset">重来</button>
         </div>
       </div>
 
-      <div class="card" id="ag-resultBox" style="display:none">
-        <div class="subhead" style="margin-top:0">③ HR 组队结果</div>
-        <div id="ag-result"></div>
-        <div style="display:flex;gap:10px;margin-top:14px">
-          <button class="btn primary" id="btnAgOpen">打开这个任务</button>
+      <div class="card" id="ag-draftBox" style="display:none">
+        <div class="subhead" style="margin-top:0">③ HR 组队草案（可以改：换人 / 删 / 调顺序 / 加岗）</div>
+        <div id="ag-draft"></div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
+          <button class="btn primary" id="btnAgCommit">开跑这单</button>
+          <span class="hint" style="margin:0" id="ag-cost"></span>
         </div>
       </div>
     </section>
@@ -974,62 +976,117 @@ $("#btnSaveEmp").onclick = async () => {
   }catch(err){ toast(err.message); }
 };
 
-const AG = { text: "", report: null, picks: {}, result: null };
+const AG = { text: "", report: null, picks: {}, extra: null, draft: null };
 
-function agReportHTML(r) {
-  const qs = (r.questions || []).map((q, i) => `
+function agTypeChip(t, label) {
+  const map = { paper: ["#0369a1", "#e0f2fe"], article: ["#047857", "#d1fae5"],
+    video: ["#b45309", "#fef3c7"], image: ["#7c3aed", "#f3e8ff"],
+    plan: ["#1d4ed8", "#dbeafe"], code: ["#0f766e", "#ccfbf1"],
+    data: ["#4338ca", "#e0e7ff"], other: ["#475569", "#e2e8f0"] };
+  const m = map[t] || map.other;
+  return `<span style="font-size:11.5px;padding:2px 10px;border-radius:999px;background:${m[1]};color:${m[0]}">${esc(label || t)}</span>`;
+}
+
+function agQHTML(qs, prefix) {
+  return (qs || []).map((q, i) => `
     <div style="margin-top:12px">
-      <div style="font-size:13px;font-weight:600;margin-bottom:6px">Q${i + 1}. ${esc(q.q)}</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px">${prefix.toUpperCase()}${i + 1}. ${esc(q.q)}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${(q.options || []).map(o => `<button class="chipbtn" data-q="${i}" data-o="${esc(o)}">${esc(o)}</button>`).join("")}
-        <input data-qtext="${i}" placeholder="或自己写…" style="padding:6px 10px;border:1px solid #dbe3f0;
+        ${(q.options || []).map(o => `<button class="chipbtn" data-${prefix}${i}="${esc(o)}">${esc(o)}</button>`).join("")}
+        <input data-qt="${prefix}${i}" placeholder="或自己写…" style="padding:6px 10px;border:1px solid #dbe3f0;
           border-radius:999px;font-size:12px;min-width:150px">
       </div>
     </div>`).join("");
-  return `<div class="noteBox" style="background:#f6f9ff;border:1px solid #e2eaf8;border-radius:12px;padding:12px 14px">
-      <div style="font-size:13px;line-height:1.8"><b>我理解成这样：</b>${esc(r.understanding || "")}</div>
-      <div style="font-size:12.5px;color:#475569;margin-top:6px"><b>要交的东西：</b>${esc(r.deliverable || "")}</div>
-    </div>${qs}`;
 }
 
-function agResultHTML(out) {
-  const badge = { new: ["新建", "#7c3aed", "#f3e8ff"], preset: ["岗位库招", "#0369a1", "#e0f2fe"], reuse: ["复用现成", "#047857", "#d1fae5"] };
-  const cards = (out.staffed || []).map((m, i) => {
-    const b = badge[m.mode] || badge.new;
-    return `<div class="card" style="padding:12px 14px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <b style="font-size:13.5px">${i + 1}. ${esc(m.title)}</b>
-        <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:${b[2]};color:${b[1]}">${b[0]}</span>
+function agReportHTML(r) {
+  return `<div class="noteBox" style="background:#f6f9ff;border:1px solid #e2eaf8;border-radius:12px;padding:12px 14px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        ${agTypeChip(r.task_type, r.type_label)}
+        <span style="font-size:12px;color:#64748b">${esc(r.why || "")}</span>
       </div>
-      ${m.duty ? `<div style="font-size:12px;color:#475569;margin-top:6px;line-height:1.7">
-        ${esc(m.duty)}</div>` : ""}
-      ${m.boundary ? `<div style="font-size:11.5px;color:#94a3b8;margin-top:4px;line-height:1.7">
-        守则：${esc(m.boundary)}</div>` : ""}
+      <div style="font-size:13px;line-height:1.8;margin-top:8px"><b>我理解成这样：</b>${esc(r.understanding || "")}</div>
+      <div style="font-size:12.5px;color:#475569;margin-top:6px"><b>要交的东西：</b>${esc(r.deliverable || "")}</div>
+      <div style="font-size:12.5px;color:#475569;margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <b>预算上限</b>
+        <input id="ag-budget" type="number" step="0.1" min="0.2" max="5" value="${Number(r.budget_suggest || 1).toFixed(1)}"
+          style="width:82px;padding:5px 8px;border:1px solid #dbe3f0;border-radius:8px;font-size:12.5px">
+        <span>元</span>
+        <span style="color:#94a3b8">建议理由：${esc(r.budget_reason || "")}</span>
+      </div>
+    </div>${agQHTML(r.questions, "q")}`;
+}
+
+function agDraftHTML() {
+  const d = AG.draft; if (!d) return "";
+  const team = d.team || [];
+  const badge = { new: ["新建", "#7c3aed", "#f3e8ff"], preset: ["岗位库招", "#0369a1", "#e0f2fe"],
+                  reuse: ["复用现成", "#047857", "#d1fae5"] };
+  const cards = team.map((m, i) => {
+    const b = badge[m.reuse_emp_id ? "reuse" : (m.reuse_preset_id ? "preset" : "new")] || badge.new;
+    return `<div class="card" style="padding:12px 14px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <b style="font-size:13.5px">${i + 1}. ${esc(m.role_title || m.title || "岗位")}</b>
+        <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:${b[2]};color:${b[1]}">${b[0]}</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button class="btn ghost" data-ag="up" data-i="${i}" title="上移" ${i === 0 ? "disabled" : ""}>↑</button>
+          <button class="btn ghost" data-ag="down" data-i="${i}" title="下移" ${i === team.length - 1 ? "disabled" : ""}>↓</button>
+          <button class="btn ghost" data-ag="del" data-i="${i}" title="删掉">✕</button>
+        </span>
+      </div>
+      ${m.duty ? `<div style="font-size:12px;color:#475569;margin-top:6px;line-height:1.7">${esc(m.duty)}</div>` : ""}
+      ${m.boundary ? `<div style="font-size:11.5px;color:#94a3b8;margin-top:4px;line-height:1.7">守则：${esc(m.boundary)}</div>` : ""}
+      <div style="margin-top:8px">
+        <select data-ag="swap" data-i="${i}" style="padding:6px 8px;border:1px solid #dbe3f0;border-radius:8px;font-size:12px">
+          <option value="">换成一个员工…</option>
+          ${(S.employees || []).map(e => `<option value="e${e.id}">改用它：${esc(e.title)}</option>`).join("")}
+          ${(S.presets || []).slice(0, 60).map(pr => `<option value="p${pr.id}">从岗位库招：${esc(pr.title)}</option>`).join("")}
+        </select>
+      </div>
     </div>`;
   }).join("");
+  const orderText = (d.order || []).map(i => (team[i] ? esc(team[i].role_title || team[i].title) : "")).join(" → ");
   return `<div style="display:grid;gap:10px">${cards}</div>
     <div style="font-size:12.5px;color:#475569;margin-top:12px;line-height:1.8">
-      执行顺序：${(out.order || []).map(i => (out.staffed || [])[i] ? esc(out.staffed[i].title) : "").join(" → ")}<br>
-      ${out.note ? "HR 的说法：" + esc(out.note) : ""}</div>`;
+      执行顺序：${orderText || "按上面的顺序"}<br>
+      ${d.note ? "HR 的说法：" + esc(d.note) : ""}</div>`;
+}
+
+function agCollect(text) {
+  const out = [];
+  document.querySelectorAll("#ag-report .chipbtn").forEach(b => {
+    const k = Object.keys(b.dataset).find(x => x.startsWith("q"));
+    if (k && b.style.background && b.style.background !== "") {
+      out.push("Q" + (Number(b.dataset[k]) + 1) + "：" + b.textContent.trim());
+    }
+  });
+  document.querySelectorAll("#ag-report [data-qt]").forEach(inp => {
+    if (inp.value.trim()) out.push("追问：" + inp.value.trim());
+  });
+  return out.join("；");
 }
 
 $("#btnAgGo").onclick = async () => {
   const t = $("#ag-text").value.trim();
   if (!t) { toast("先用一句话说你要什么"); return; }
-  AG.text = t; AG.picks = {};
-  $("#btnAgGo").disabled = true; $("#ag-tip").textContent = "正在听懂…";
+  AG.text = t; AG.picks = {}; AG.extra = null; AG.draft = null;
+  $("#btnAgGo").disabled = true; $("#ag-tip").textContent = "先判断题型…";
   try {
     const r = await postJSON("/api/agency/understand", { text: t });
     AG.report = r.report;
     $("#ag-report").innerHTML = agReportHTML(r.report);
     $("#ag-reportBox").style.display = "";
-    $("#ag-resultBox").style.display = "none";
-    $("#ag-tip").textContent = "理解完可以改，也可以直接交给 HR";
+    $("#ag-draftBox").style.display = "none";
+    $("#btnAgAsk").style.display = r.report.ask_more ? "" : "none";
+    $("#ag-tip").textContent = "题型：" + (r.report.type_label || r.report.task_type);
     $("#ag-report").querySelectorAll(".chipbtn").forEach(b => b.onclick = () => {
-      const qi = b.dataset.q;
-      $("#ag-report").querySelectorAll(`.chipbtn[data-q="${qi}"]`).forEach(x => x.style.cssText = "");
+      const k = Object.keys(b.dataset).find(x => x.startsWith("q"));
+      if (!k) return;
+      document.querySelectorAll(`#ag-report .chipbtn`).forEach(x => {
+        if (x.dataset[k] !== undefined && x.dataset[k] !== b.dataset[k]) x.style.cssText = "";
+      });
+      document.querySelectorAll(`#ag-report .chipbtn[data-${k}]`).forEach(x => x.style.cssText = "");
       b.style.cssText = "background:#1d4ed8;color:#fff;border-color:#1d4ed8";
-      AG.picks[qi] = b.dataset.o;
     });
   } catch (e) {
     toast(e.message || "理解失败");
@@ -1037,43 +1094,86 @@ $("#btnAgGo").onclick = async () => {
   } finally { $("#btnAgGo").disabled = false; }
 };
 
-$("#btnAgBuild").onclick = async () => {
-  const answers = [];
-  $("#ag-report").querySelectorAll("[data-qtext]").forEach(inp => {
-    const qi = inp.dataset.qtext;
-    const v = inp.value.trim() || AG.picks[qi];
-    if (v) answers.push("Q" + (Number(qi) + 1) + "：" + v);
-  });
-  Object.keys(AG.picks).forEach(k => {
-    if (!answers.some(a => a.startsWith("Q" + (Number(k) + 1)))) answers.push("Q" + (Number(k) + 1) + "：" + AG.picks[k]);
-  });
-  $("#btnAgBuild").disabled = true;
+$("#btnAgAsk").onclick = async () => {
+  $("#btnAgAsk").disabled = true;
   try {
-    const out = await postJSON("/api/agency/build", { pid: S.pid, text: AG.text,
-      answers: answers.join("；"), understanding: (AG.report || {}).understanding || "" });
-    AG.result = out;
-    $("#ag-result").innerHTML = agResultHTML(out);
-    $("#ag-resultBox").style.display = "";
-    $("#ag-tip").textContent = "组队完成";
-    await load(S.pid);
-    toast("HR 组好队了，共 " + (out.staffed || []).length + " 人");
+    const more = await postJSON("/api/agency/ask", { text: AG.text, answers: agCollect() });
+    const qs = (more.more && more.more.questions) || [];
+    if (!qs.length) { toast("它觉得够了，可以交给 HR 了"); $("#btnAgAsk").style.display = "none"; return; }
+    $("#ag-report").insertAdjacentHTML("beforeend",
+      '<div style="margin-top:16px;font-size:12.5px;color:#64748b">第二轮追问</div>' + agQHTML(qs, "r"));
+    if (!(more.more && more.more.ask_more)) $("#btnAgAsk").style.display = "none";
+  } catch (e) { toast(e.message || "追问失败"); }
+  finally { $("#btnAgAsk").disabled = false; }
+};
+
+$("#btnAgBuild").onclick = async () => {
+  const budget = Number(($("#ag-budget") || {}).value || 2);
+  $("#btnAgBuild").disabled = true;
+  $("#btnAgBuild").textContent = "HR 正在组队…";
+  try {
+    const out = await postJSON("/api/agency/build", {
+      pid: S.pid, text: AG.text, task_type: (AG.report || {}).task_type || "other",
+      budget: budget, answers: agCollect() });
+    AG.draft = out.draft;
+    if (AG.draft && AG.draft.team) {
+      AG.draft.team = AG.draft.team.map(t => Object.assign({ role_title: t.role_title || t.title || "岗位" }, t));
+      if (!AG.draft.order || !AG.draft.order.length) AG.draft.order = AG.draft.team.map((_, i) => i);
+    }
+    $("#ag-draft").innerHTML = agDraftHTML();
+    $("#ag-draftBox").style.display = "";
+    $("#ag-cost").textContent = "预估 " + Number((AG.draft && AG.draft.cost_estimate) || 0).toFixed(2) +
+      " 元 · 预算 " + budget.toFixed(1) + " 元";
+    $("#ag-draft").querySelectorAll('[data-ag]').forEach(el => el.onchange = el.onclick = () => agEdit(el));
   } catch (e) { toast(e.message || "组队失败"); }
-  finally { $("#btnAgBuild").disabled = false; }
+  finally { $("#btnAgBuild").disabled = false; $("#btnAgBuild").textContent = "按这个预算交给 HR"; }
+};
+
+function agEdit(el) {
+  const d = AG.draft; if (!d) return;
+  const i = Number(el.dataset.i);
+  const act = el.dataset.ag;
+  if (act === "up" && i > 0) { const t = d.team[i]; d.team[i] = d.team[i - 1]; d.team[i - 1] = t; }
+  else if (act === "down" && i < d.team.length - 1) { const t = d.team[i]; d.team[i] = d.team[i + 1]; d.team[i + 1] = t; }
+  else if (act === "del") { d.team.splice(i, 1); }
+  else if (act === "swap" && el.value) {
+    const v = el.value;
+    const target = d.team[i] || {};
+    const keep = { role_title: target.role_title, emoji: target.emoji, kind: target.kind || "text",
+                   duty: target.duty, boundary: target.boundary };
+    const emp = (S.employees || []).find(e => "e" + e.id === v);
+    const pre = (S.presets || []).find(pr => "p" + pr.id === v);
+    if (emp) d.team[i] = Object.assign(keep, { role_title: emp.title, reuse_emp_id: emp.id,
+      reuse_preset_id: null, duty: emp.duty, boundary: emp.boundary });
+    else if (pre) d.team[i] = Object.assign(keep, { role_title: pre.title, reuse_preset_id: pre.id,
+      reuse_emp_id: null, duty: pre.duty, boundary: "" });
+  }
+  d.order = d.team.map((_, k) => k);
+  $("#ag-draft").innerHTML = agDraftHTML();
+  $("#ag-draft").querySelectorAll('[data-ag]').forEach(x => x.onchange = x.onclick = () => agEdit(x));
+}
+
+$("#btnAgCommit").onclick = async () => {
+  const d = AG.draft; if (!d || !(d.team || []).length) { toast("至少留一个岗位"); return; }
+  $("#btnAgCommit").disabled = true;
+  try {
+    const out = await postJSON("/api/agency/commit", Object.assign({
+      pid: S.pid, understanding: (AG.report || {}).understanding || "",
+      task_type: (AG.report || {}).task_type || "other" }, d));
+    AG.result = out;
+    await load(S.pid);
+    toast("开工了：共 " + (out.staffed || []).length + " 人");
+    setView("tasks");
+    selectTask(out.task_id);
+  } catch (e) { toast(e.message || "开工失败"); }
+  finally { $("#btnAgCommit").disabled = false; }
 };
 
 $("#btnAgReset").onclick = () => {
-  AG.report = null; AG.picks = {}; AG.result = null;
+  AG.report = null; AG.picks = {}; AG.draft = null; AG.result = null;
   $("#ag-reportBox").style.display = "none";
-  $("#ag-resultBox").style.display = "none";
-  $("#ag-tip").textContent = "大约花 0.002 元";
-};
-
-$("#btnAgOpen").onclick = async () => {
-  const tid = AG.result && AG.result.task_id;
-  if (!tid) return;
-  await load(S.pid);
-  setView("tasks");
-  selectTask(tid);
+  $("#ag-draftBox").style.display = "none";
+  $("#ag-tip").textContent = "先判断题型，再决定问什么";
 };
 
 $("#btnKey").onclick = async () => {
