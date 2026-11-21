@@ -134,6 +134,12 @@ CREATE TABLE IF NOT EXISTS messages(
 CREATE TABLE IF NOT EXISTS memory(
   id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id INT, task_id INT, content TEXT, ts TEXT
 );
+CREATE TABLE IF NOT EXISTS kb(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INT, task_id INT, emp_id INT,
+  title TEXT, content TEXT, kind TEXT, tags TEXT,
+  source TEXT DEFAULT 'auto', ts TEXT
+);
 CREATE TABLE IF NOT EXISTS pipelines(
   id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INT, name TEXT, spec TEXT, created_at TEXT
 );
@@ -327,6 +333,10 @@ def init_db():
     c.commit()
     normalize_emoji(c)
     c.close()
+    try:
+        kb_backfill()
+    except Exception as _e:  # noqa: BLE001
+        _log("kb backfill failed: %r" % (_e,))
 
 
 # ---------------------------------------------------------------- 事件
@@ -342,6 +352,137 @@ def publish(task_id, ev):
             pass
 
 
+KB_KINDS = ("reply", "deliverable", "image")
+
+
+def _kb_title(text):
+    for line in (text or "").splitlines():
+        t = line.strip().lstrip("#").strip()
+        if t:
+            return t[:42]
+    return "未命名"
+
+
+def kb_add(project_id, task_id, emp_id, title, content, kind="reply",
+           tags="", source="auto"):
+    if not (content or "").strip():
+        return None
+    c = db()
+    cur = c.execute(
+        "INSERT INTO kb(project_id,task_id,emp_id,title,content,kind,tags,source,ts)"
+        " VALUES(?,?,?,?,?,?,?,?,?)",
+        (project_id, task_id, emp_id, title or _kb_title(content), content,
+         kind, tags or "", source, now()))
+    c.commit()
+    kid = cur.lastrowid
+    c.close()
+    return kid
+
+
+def kb_auto(task_id, emp_id, kind, content):
+    """员工产出的正文/成品自动进知识库。太短的、纯提示性的不收。"""
+    txt = (content or "").strip()
+    if kind not in KB_KINDS or len(txt) < 120:
+        return None
+    c = db()
+    t = c.execute("SELECT project_id,title FROM tasks WHERE id=?", (task_id,)).fetchone()
+    e = c.execute("SELECT title FROM employees WHERE id=?", (emp_id,)).fetchone()
+    c.close()
+    tags = (e["title"] if e and e["title"] else "")
+    c = db()
+    dup = c.execute(
+        "SELECT id FROM kb WHERE task_id=? AND emp_id=? AND content=?",
+        (task_id, emp_id, txt)).fetchone()
+    c.close()
+    if dup:
+        return dup["id"]
+    return kb_add(t["project_id"] if t else None, task_id, emp_id,
+                  _kb_title(txt), txt, kind, tags, "auto")
+
+
+def kb_backfill():
+    """把历史消息里够长的产出补进知识库（只补一次）。"""
+    c = db()
+    n = c.execute("SELECT COUNT(*) n FROM kb").fetchone()["n"]
+    if n:
+        c.close()
+        return 0
+    rows = c.execute(
+        "SELECT m.id,m.task_id,m.sender,m.kind,m.content,t.project_id,e.id eid,e.title etitle"
+        " FROM messages m LEFT JOIN tasks t ON t.id=m.task_id"
+        " LEFT JOIN employees e ON e.title=m.sender"
+        " WHERE m.kind IN ('reply','deliverable') AND LENGTH(m.content)>=120"
+        " ORDER BY m.id").fetchall()
+    added = 0
+    for r in rows:
+        c.execute(
+            "INSERT INTO kb(project_id,task_id,emp_id,title,content,kind,tags,source,ts)"
+            " VALUES(?,?,?,?,?,?,?,?,?)",
+            (r["project_id"], r["task_id"], r["eid"], _kb_title(r["content"]),
+             r["content"], r["kind"], (r["etitle"] or r["sender"] or ""), "auto", now()))
+        added += 1
+    c.commit()
+    c.close()
+    return added
+
+
+def kb_search(project_id, q="", emp_id=None, kind=None, tag=None, limit=80):
+    c = db()
+    sql = ("SELECT k.id,k.project_id,k.task_id,k.emp_id,k.title,k.kind,k.tags,k.source,k.ts,"
+           " e.title AS emp_title, t.title AS task_title, LENGTH(k.content) AS n"
+           " FROM kb k LEFT JOIN employees e ON e.id=k.emp_id"
+           " LEFT JOIN tasks t ON t.id=k.task_id WHERE 1=1")
+    args = []
+    if project_id:
+        sql += " AND (k.project_id=? OR k.project_id IS NULL)"
+        args.append(project_id)
+    if q:
+        sql += " AND (k.title LIKE ? OR k.content LIKE ? OR k.tags LIKE ?)"
+        args += ["%" + q + "%"] * 3
+    if emp_id:
+        sql += " AND k.emp_id=?"
+        args.append(emp_id)
+    if kind:
+        sql += " AND k.kind=?"
+        args.append(kind)
+    if tag:
+        sql += " AND k.tags LIKE ?"
+        args.append("%" + tag + "%")
+    sql += " ORDER BY k.id DESC LIMIT ?"
+    args.append(limit)
+    rows = [dict(r) for r in c.execute(sql, args).fetchall()]
+    c.close()
+    return rows
+
+
+def kb_context(project_id, text, k=3):
+    """给员工干活前取的「公司知识库摘录」：按关键词粗筛。"""
+    words = [w for w in re.split(r"[\s，。、；：（）()\[\]【】]+", text or "") if len(w) >= 2][:6]
+    if not words:
+        return ""
+    seen, picked = set(), []
+    for w in words:
+        for r in kb_search(project_id, q=w, limit=2):
+            if r["id"] in seen:
+                continue
+            seen.add(r["id"])
+            picked.append(r)
+            if len(picked) >= k:
+                break
+        if len(picked) >= k:
+            break
+    if not picked:
+        return ""
+    c = db()
+    out = []
+    for r in picked:
+        row = c.execute("SELECT content FROM kb WHERE id=?", (r["id"],)).fetchone()
+        if row:
+            out.append("· [" + (r["emp_title"] or "同事") + "] " + row["content"][:320])
+    c.close()
+    return "\n".join(out)
+
+
 def log_msg(task_id, step_id, sender, receiver, kind, content,
             tin=0, tout=0, cost=0.0, ms=0):
     c = db()
@@ -353,6 +494,15 @@ def log_msg(task_id, step_id, sender, receiver, kind, content,
     mid = cur.lastrowid
     c.commit()
     c.close()
+    try:
+        if kind in KB_KINDS:
+            c2 = db()
+            e = c2.execute("SELECT id FROM employees WHERE title=?", (sender,)).fetchone()
+            c2.close()
+            if e:
+                kb_auto(task_id, e["id"], kind, content)
+    except Exception as _e:
+        _log("kb auto failed: %r" % (_e,))
     publish(task_id, {"type": "message", "data": {
         "id": mid, "task_id": task_id, "step_id": step_id, "sender": sender,
         "receiver": receiver, "kind": kind, "content": content, "tokens_in": tin,
@@ -632,8 +782,19 @@ def run_task(task_id):
         log_msg(task_id, st["id"], "系统", emp["title"], "instruction", user)
 
         try:
+            _kb = ""
+            try:
+                _kb = kb_context(task["project_id"], task["title"] + " " + user)
+            except Exception:  # noqa: BLE001
+                _kb = ""
+            _sys = emp_system(emp, mems)
+            if _kb:
+                _sys += ("\n\n【公司知识库摘录 —— 里面别的同事做过的相关成果，"
+                         "可以参考说法与口径，但不要照抄，也不要替他们改稿】\n" + _kb)
+                log_msg(task_id, st["id"], "系统", emp["title"], "note",
+                        "给这位同事翻了 %d 条公司知识库" % _kb.count("· ["))
             text, tin, tout, ms = call_model(emp["model"], [
-                {"role": "system", "content": emp_system(emp, mems)},
+                {"role": "system", "content": _sys},
                 {"role": "user", "content": user}])
         except Exception as exc:  # noqa: BLE001
             set_step(st["id"], status="failed")
@@ -834,6 +995,39 @@ class H(BaseHTTPRequestHandler):
                                    "projects": projects, "pid": pid, "employees": emps,
                                    "tasks": tasks, "stats": stats, "has_key": bool(API_KEY)})
 
+        if path == "/api/kb":
+            pid = int(qs.get("pid", ["0"])[0] or 0)
+            rows = kb_search(pid,
+                             q=(qs.get("q", [""])[0] or "").strip(),
+                             emp_id=int(qs.get("emp", ["0"])[0] or 0) or None,
+                             kind=(qs.get("kind", [""])[0] or None),
+                             limit=int(qs.get("limit", ["80"])[0] or 80))
+            c = db()
+            n_all = c.execute("SELECT COUNT(*) n FROM kb").fetchone()["n"]
+            by_kind = [dict(r) for r in c.execute(
+                "SELECT kind,COUNT(*) n FROM kb GROUP BY kind").fetchall()]
+            emps = [dict(r) for r in c.execute(
+                "SELECT e.id,e.title,COUNT(k.id) n FROM kb k JOIN employees e ON e.id=k.emp_id"
+                " GROUP BY e.id ORDER BY n DESC").fetchall()]
+            c.close()
+            return self.send(200, {"items": rows, "total": n_all,
+                                   "by_kind": by_kind, "by_emp": emps})
+
+        if path.startswith("/api/kb/"):
+            try:
+                kid = int(path.rsplit("/", 1)[1])
+            except ValueError:
+                return self.send(400, {"error": "知识条目编号不对"})
+            c = db()
+            r = c.execute(
+                "SELECT k.*, e.title emp_title, t.title task_title FROM kb k"
+                " LEFT JOIN employees e ON e.id=k.emp_id"
+                " LEFT JOIN tasks t ON t.id=k.task_id WHERE k.id=?", (kid,)).fetchone()
+            c.close()
+            if not r:
+                return self.send(404, {"error": "没有这条知识"})
+            return self.send(200, {"item": dict(r)})
+
         if path == "/api/presets":
             pid = int(qs.get("pid", [0])[0] or 0)
             c = db()
@@ -997,6 +1191,34 @@ class H(BaseHTTPRequestHandler):
         global API_KEY
         path = urlparse(self.path).path
         b = self.body()
+
+        if path == "/api/kb":
+            c = db()
+            pid = int(b.get("project_id") or 1)
+            cur = c.execute(
+                "INSERT INTO kb(project_id,task_id,emp_id,title,content,kind,tags,source,ts)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (pid, b.get("task_id"), b.get("emp_id"),
+                 (b.get("title") or "").strip() or _kb_title(b.get("content")),
+                 (b.get("content") or "").strip(), b.get("kind") or "note",
+                 (b.get("tags") or "").strip(), "manual", now()))
+            c.commit()
+            kid = cur.lastrowid
+            c.close()
+            return self.send(200, {"ok": True, "id": kid})
+
+        if path.startswith("/api/kb/"):
+            try:
+                kid = int(path.rsplit("/", 1)[1])
+            except ValueError:
+                return self.send(400, {"error": "知识条目编号不对"})
+            if not b.get("_delete"):
+                return self.send(400, {"error": "这个接口只支持删除"})
+            c = db()
+            c.execute("DELETE FROM kb WHERE id=?", (kid,))
+            c.commit()
+            c.close()
+            return self.send(200, {"ok": True})
 
         if path == "/api/projects":
             c = db()
