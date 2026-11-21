@@ -281,7 +281,8 @@
       <span class="chip" id="projKind">—</span>
       <span class="spacer"></span>
       <button class="btn" id="btnNewTask">＋ 派一个活</button>
-      <button class="btn primary" id="btnOpenHire">招募员工</button>
+      <button class="btn sm ghost" id="btnKey" title="填 / 换 DeepSeek 的 API Key">🔑 Key</button>
+        <button class="btn primary" id="btnOpenHire">招募员工</button>
     </div>
 
     <div class="keybar" id="keyBar">
@@ -393,6 +394,31 @@
     <div class="foot">
       <button class="btn ghost" data-close>取消</button>
       <button class="btn primary" id="btnSaveEmp">入职</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="maskKey">
+  <div class="sheet" style="width:min(540px,100%)">
+    <h3 style="margin:0 0 6px">填 DeepSeek 的 API Key</h3>
+    <div class="hint" style="margin:0 0 14px">
+      只存在这台电脑上（写进 exe 同目录的 key.txt），不上传、不写数据库。
+    </div>
+    <label class="fl">API Key</label>
+    <div style="display:flex;gap:8px">
+      <input id="k-input" type="password" placeholder="sk-..."
+             style="flex:1;padding:10px 12px;border:1px solid #dbe3f0;border-radius:10px;font-size:13px">
+      <button class="btn sm" id="btnKeyEye" title="显示 / 隐藏">👁</button>
+    </div>
+    <div class="hint" id="k-now" style="margin:8px 0 0"></div>
+    <div class="hint" style="margin:6px 0 0">
+      还没有？去 <b>platform.deepseek.com/api_keys</b> 创建一个（sk- 开头）。
+    </div>
+    <div class="foot">
+      <button class="btn ghost" id="btnKeyClear">清除已存的</button>
+      <span style="flex:1"></span>
+      <button class="btn" id="btnKeyCancel">取消</button>
+      <button class="btn primary" id="btnKeySave">保存</button>
     </div>
   </div>
 </div>
@@ -736,7 +762,8 @@ function renderKeyBar(){
   const bar = $("#keyBar"); if(!bar) return;
   bar.classList.toggle("on", !S.has_key);
 }
-$("#btnKeyHow").onclick = () => {
+$("#btnKeyHow").onclick = () => { $("#btnKey").click(); };
+const _oldHow = () => {
   const lines = [
     "三步：",
     "",
@@ -911,6 +938,42 @@ $("#btnSaveEmp").onclick = async () => {
     await load(S.pid);
     toast(S.editId ? "改好了" : "入职成功");
   }catch(err){ toast(err.message); }
+};
+
+$("#btnKey").onclick = async () => {
+  try {
+    const r = await api("/api/key");
+    $("#k-now").textContent = r.has_key
+      ? ("现在用的：" + r.masked + "（来源 " + r.source + "）")
+      : "现在还没填。";
+  } catch (_) { $("#k-now").textContent = ""; }
+  $("#k-input").value = "";
+  $("#maskKey").classList.add("on");
+  setTimeout(() => $("#k-input").focus(), 60);
+};
+$("#btnKeyEye").onclick = () => {
+  const i = $("#k-input");
+  i.type = i.type === "password" ? "text" : "password";
+};
+$("#btnKeyCancel").onclick = () => $("#maskKey").classList.remove("on");
+$("#btnKeySave").onclick = async () => {
+  const v = $("#k-input").value.trim();
+  if (!v) { toast("先把 key 粘进来"); return; }
+  try {
+    await postJSON("/api/key", { key: v });
+    $("#maskKey").classList.remove("on");
+    await load(S.pid);
+    toast("Key 存好了，可以开工了");
+  } catch (e) { toast(e.message || "保存失败"); }
+};
+$("#btnKeyClear").onclick = async () => {
+  if (!confirm("清除这台电脑上已存的 key？清掉之后员工干不了活。")) return;
+  try {
+    await postJSON("/api/key", { key: "" });
+    $("#maskKey").classList.remove("on");
+    await load(S.pid);
+    toast("已清除");
+  } catch (e) { toast(e.message || "清除失败"); }
 };
 
 $("#btnDockHide").onclick = () => {

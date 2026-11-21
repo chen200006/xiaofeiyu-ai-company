@@ -772,6 +772,13 @@ class H(BaseHTTPRequestHandler):
             with open(UI_PATH, "rb") as f:
                 return self.send(200, f.read(), "text/html; charset=utf-8")
 
+        if path == "/api/key":
+            k = API_KEY or ""
+            masked = (k[:7] + "…" + k[-4:]) if len(k) >= 14 else ("已填" if k else "")
+            return self.send(200, {"has_key": bool(k), "masked": masked,
+                                   "source": ("环境变量" if os.environ.get("DEEPSEEK_API_KEY") else
+                                              ("key.txt" if os.path.exists(os.path.join(BASE, "key.txt")) else "无"))})
+
         if path == "/api/state":
             c = db()
             projects = [dict(r) for r in c.execute("SELECT * FROM projects ORDER BY id").fetchall()]
@@ -949,6 +956,7 @@ class H(BaseHTTPRequestHandler):
 
     # ---------- POST
     def do_POST(self):
+        global API_KEY
         path = urlparse(self.path).path
         b = self.body()
 
@@ -1075,6 +1083,30 @@ class H(BaseHTTPRequestHandler):
                 except Exception:  # noqa: BLE001
                     pass
             return self.send(200, {"ok": True})
+
+        if path == "/api/key":
+            raw = (b.get("key") or "").strip()
+            fp = os.path.join(BASE, "key.txt")
+            if not raw:
+                # 清除
+                try:
+                    if os.path.exists(fp):
+                        os.remove(fp)
+                except Exception:
+                    pass
+                API_KEY = ""
+                return self.send(200, {"ok": True, "has_key": False})
+            m = re.search(r"sk-[A-Za-z0-9]{20,}", raw)
+            if not m:
+                return self.send(400, {"error": "这不像 DeepSeek 的 key（应该以 sk- 开头）"})
+            key = m.group(0)
+            try:
+                with open(fp, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(key + "\n")
+            except Exception as e:
+                return self.send(500, {"error": "写不进 key.txt：%s" % e})
+            API_KEY = key
+            return self.send(200, {"ok": True, "has_key": True})
 
         if path == "/api/image":
             try:
