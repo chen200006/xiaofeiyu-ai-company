@@ -291,6 +291,8 @@ def init_db():
         c.execute("ALTER TABLE presets ADD COLUMN mine INT DEFAULT 0")
     if "src_emp" not in cols("presets"):
         c.execute("ALTER TABLE presets ADD COLUMN src_emp INT")
+    if "boundary" not in cols("employees"):
+        c.execute("ALTER TABLE employees ADD COLUMN boundary TEXT DEFAULT ''")
     if "kind" not in cols("employees"):
         c.execute("ALTER TABLE employees ADD COLUMN kind TEXT DEFAULT 'text'")
     if "kind" not in cols("presets"):
@@ -440,17 +442,72 @@ def is_prose(emp):
     return bool(re.search(r"正文|写成|写作|报告|文章|稿|文案", txt))
 
 
+def boundary_of(emp):
+    try:
+        return (emp["boundary"] or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def emp_system(emp, memories):
+    """岗位提示词：先把边界写死，再讲职责。越界即停，不许替别人干活。"""
     parts = [
         "你是这家公司的%s（岗位名：%s）。" % (emp["title"], emp["name"]),
-        "职责：%s" % (emp["duty"] or "按岗位名自行理解。"),
-        "输入要求：%s" % (emp["input_spec"] or "上游交来的材料。"),
-        "输出要求：%s" % (emp["output_spec"] or "直接给出可用的工作成果。"),
-        "规则：只输出你的工作成果本身，不要寒暄、不要复述要求、不要写“好的我来”。中文作答。",
+        "",
+        "【你的岗位边界 —— 最高优先级，违反即算失败】",
+        "1. 你只交付「%s」这一件东西，别的一律不做。" % (emp["output_spec"] or "本岗位的产出物"),
+        "2. 不属于你的活，哪怕你写得出来也不许写：不替别的岗位写正文、不改稿、不算价、不做别的岗位的产出。",
+        "3. 上游材料不够，就列「我还缺什么」，不要自己编、不要顺手替上游补做。",
+        "4. 你的每一段文字都必须服务于你的产出物；写完后自查一句：这段话是不是别的岗位该说的？是，就删。",
+    ]
+    bd = boundary_of(emp)
+    if bd:
+        parts.append("5. 这个岗位明令不做的事：" + bd)
+    parts += [
+        "",
+        "【职责】" + (emp["duty"] or "按岗位名自行理解。"),
+        "【输入】" + (emp["input_spec"] or "上游交来的材料。"),
+        "【输出】" + (emp["output_spec"] or "直接给出可用的工作成果。"),
+        "",
+        "【格式】只输出工作成果本身：不寒暄、不复述任务、不写「好的我来」、不解释你在干什么。中文作答。",
     ]
     if memories:
-        parts.append("你记得此前的工作：\n" + "\n".join("- " + m for m in memories[-5:]))
+        parts.append("【你记得的事】\n" + "\n".join("- " + m for m in memories[-5:]))
     return "\n".join(parts)
+
+
+OUT_OF_SCOPE_HINTS = {
+    "审核": ["以下是完整的正文", "## 一、", "我重写了一版", "修改后的完整正文"],
+    "校对": ["以下是完整的正文", "## 一、"],
+    "研究": ["## 一、", "综上所述", "本文认为"],
+}
+
+
+def role_tag(emp):
+    """从岗位名 + 职责里猜角色类型（employees 表没有 tag 列）。"""
+    txt = (emp["title"] or "") + " " + (emp["duty"] or "")
+    if any(k in txt for k in ("审核", "审稿", "校对", "挑错", "挑空话")):
+        return "审核"
+    if any(k in txt for k in ("研究", "检索", "要点清单", "拆题")):
+        return "研究"
+    return ""
+
+
+def scope_warn(emp, text):
+    """粗查越界：审核岗写出整篇正文、研究岗写出成稿等。返回提示语或空串。"""
+    tag = role_tag(emp)
+    hints = OUT_OF_SCOPE_HINTS.get(tag) or []
+    if not hints:
+        return ""
+    body = text or ""
+    hits = [h for h in hints if h in body]
+    if not hits:
+        return ""
+    if tag in ("审核", "校对") and len(body) > 1500:
+        return "疑似越界：这是审核岗，却给出了成篇正文（命中「%s」）。" % hits[0]
+    if tag == "研究" and len(body) > 2500:
+        return "疑似越界：这是研究岗，却写出了成稿（命中「%s」）。" % hits[0]
+    return ""
 
 
 def task_brief(task):
@@ -546,6 +603,10 @@ def run_task(task_id):
         set_step(st["id"], status="done", output=text, tokens_in=tin,
                  tokens_out=tout, cost=cc, finished_at=now())
         bump_task(task_id, cc, tin, tout)
+
+        warn = scope_warn(emp, text)
+        if warn:
+            log_msg(task_id, st["id"], "系统", emp["title"], "note", "⚠ " + warn)
 
         if (emp.get("kind") or "text") == "image":
             log_msg(task_id, st["id"], "系统", emp["title"], "note", "按提示词开始出图…")
@@ -895,11 +956,12 @@ class H(BaseHTTPRequestHandler):
             c = db()
             cur = c.execute(
                 "INSERT INTO employees(project_id,name,title,emoji,duty,input_spec,output_spec,"
-                "model,memory,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "model,memory,created_at,kind,boundary) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (b.get("project_id"), b.get("name") or "新人", b.get("title") or "员工",
                  b.get("emoji") or "🧑", b.get("duty", ""), b.get("input_spec", ""),
                  b.get("output_spec", ""), b.get("model", "deepseek-chat"),
-                 int(b.get("memory", 1)), now(), b.get("kind") or "text"))
+                 int(b.get("memory", 1)), now(), b.get("kind") or "text",
+                 b.get("boundary") or ""))
             eid = cur.lastrowid
             if b.get("save_preset"):
                 c.execute("INSERT INTO presets(family,emoji,title,tag,duty,input_spec,output_spec,"
@@ -919,7 +981,7 @@ class H(BaseHTTPRequestHandler):
                 c.execute("DELETE FROM employees WHERE id=?", (eid,))
             else:
                 fields = ["name", "title", "emoji", "duty", "input_spec",
-                          "output_spec", "model", "memory", "kind"]
+                          "output_spec", "model", "memory", "kind", "boundary"]
                 sets, vals = [], []
                 for f in fields:
                     if f in b:
@@ -957,6 +1019,36 @@ class H(BaseHTTPRequestHandler):
             c.commit()
             c.close()
             return self.send(200, {"ok": True})
+
+        if path == "/api/gen_employee":
+            brief = (b.get("brief") or "").strip()
+            if not brief:
+                return self.send(400, {"ok": False, "error": "先写一句你想让他干什么"})
+            kind = b.get("kind") or "论文报告"
+            meta = (
+                "你是「一个人的公司」里的人力总监。老板原话：『%s』\n"
+                "公司主业：%s。\n\n"
+                "把老板这句话变成一个**只做这件事**的岗位。三条硬要求：\n"
+                "① 岗位必须严格对应原话的动作（他说挑错，岗位就是挑错；他说写文案，岗位就是写文案），"
+                "不许改成别的行业、别的职能，不许自作主张加职责；\n"
+                "② duty 只写他在一段流水线里负责的那一环，并明确写出「不负责什么」；\n"
+                "③ boundary 写他越界时最可能犯的 2—3 件事（分号分隔），例如替上游补做、替下游改稿。\n\n"
+                "只输出 JSON，不要解释、不要代码块：\n"
+                '{"title":"岗位名（≤6字，动词开头）","duty":"80-140字","input_spec":"一句话",'
+                '"output_spec":"一句话，可验收","boundary":"2-3项，分号分隔"}'
+            ) % (brief, kind)
+            try:
+                txt, tin, tout, ms = call_model("deepseek-chat", [
+                    {"role": "system", "content": "你是招聘总监，只输出 JSON。"},
+                    {"role": "user", "content": meta},
+                ], temperature=0.35, max_tokens=900)
+                m = re.search(r"\{.*\}", txt, re.S)
+                obj = json.loads(m.group(0)) if m else {}
+                if not obj.get("title"):
+                    raise RuntimeError("模型没给出岗位名")
+                return self.send(200, {"ok": True, "draft": obj})
+            except Exception as exc:  # noqa: BLE001
+                return self.send(500, {"ok": False, "error": str(exc)[:300]})
 
         if path == "/api/image":
             try:
@@ -999,7 +1091,15 @@ class H(BaseHTTPRequestHandler):
                  b.get("accept", ""), float(b.get("budget", 5.0)), b.get("mode", "relay"),
                  "pending", now()))
             tid = cur.lastrowid
-            appr = set(b.get("approval_idx") or [])
+            ai = b.get("approval_idx")
+            if isinstance(ai, bool) or ai is None:
+                appr = set()
+            elif isinstance(ai, int):
+                appr = {ai} if ai >= 0 else set()
+            elif isinstance(ai, (list, tuple, set)):
+                appr = {int(x) for x in ai if str(x).lstrip("-").isdigit() and int(x) >= 0}
+            else:
+                appr = set()
             for i, eid in enumerate(b.get("emp_ids") or []):
                 c.execute("INSERT INTO steps(task_id,idx,emp_id,status,needs_approval)"
                           " VALUES(?,?,?,?,?)", (tid, i, eid, "pending", 1 if i in appr else 0))
