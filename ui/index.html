@@ -43,6 +43,12 @@
   .nav button:hover{background:#162032;color:#e6eefc}
   .nav button.on{background:linear-gradient(90deg,rgba(79,124,255,.22),rgba(79,124,255,.06));
     color:#fff;box-shadow:inset 2px 0 0 var(--accent)}
+  .keybar{display:none;align-items:center;gap:12px;padding:10px 16px;margin:0 0 14px;
+    border:1px solid #f2d6a8;background:#fffaf0;border-radius:12px;color:#7a5a1e;font-size:13px;line-height:1.7}
+  .keybar.on{display:flex}
+  .keybar b{color:#5e4413}
+  .keybar code{background:#fff;border:1px solid #eadfc4;border-radius:6px;padding:1px 6px;font-size:12px}
+  .keybar .btn{flex:0 0 auto}
   .rail .railfoot{margin-top:auto;font-size:11.5px;color:#7b8aa1;padding:12px 8px 2px;
     border-top:1px solid #1b2536}
   .rail .railfoot .line{display:flex;align-items:baseline;justify-content:space-between;
@@ -255,6 +261,16 @@
       <button class="btn primary" id="btnOpenHire">招募员工</button>
     </div>
 
+    <div class="keybar" id="keyBar">
+      <span style="font-size:18px">🔑</span>
+      <div style="flex:1">
+        <b>还没有填 API Key，员工干不了活。</b>
+        在 <code>小肥鱼AI公司.exe</code> 同目录建一个 <code>key.txt</code>，里面只写一行
+        <code>sk-...</code>（DeepSeek 的 key），然后重启这个软件。
+      </div>
+      <button class="btn" id="btnKeyHow">怎么弄？</button>
+    </div>
+
     <section id="view-team">
       <div class="hint">每个人只干一件事。点「修改」可以改职责、换表情、改记忆开关。</div>
       <div class="grid cards" id="teamGrid"></div>
@@ -441,6 +457,7 @@ async function load(pid){
   S.projects=st.projects; S.pid=st.pid; S.employees=st.employees; S.tasks=st.tasks;
   S.stats=st.stats||[];
   renderProj(); renderTeam(); renderTasks();
+  renderKeyBar();
   $("#todayCost").textContent = money(S.stats.reduce((a,r)=>a+(r.cost||0),0)) + " 元";
   const pj = S.projects.find(p=>p.id===S.pid);
   $("#projKind").textContent = pj ? pj.kind : "—";
@@ -682,6 +699,23 @@ async function refreshStats(){
     if(S.detail) renderDetail();
   }catch(_){}
 }
+
+function renderKeyBar(){
+  const bar = $("#keyBar"); if(!bar) return;
+  bar.classList.toggle("on", !S.has_key);
+}
+$("#btnKeyHow").onclick = () => {
+  const lines = [
+    "三步：",
+    "",
+    "1. 打开 platform.deepseek.com/api_keys 申请一个 key（sk- 开头）",
+    "2. 在放 小肥鱼AI公司.exe 的那个文件夹里，右键新建文本文档，改名成 key.txt（连扩展名一起改）",
+    "3. 用记事本打开它，把 key 粘进去，保存，重启这个软件",
+    "",
+    "key.txt 只存在你电脑上：软件不会上传，也不会写进数据库。"
+  ];
+  alert(lines.join("\n"));
+};
 
 function setView(v){
   S.view=v;
