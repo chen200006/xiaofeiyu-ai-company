@@ -100,6 +100,24 @@
   .filters button.on{background:#111a2b;color:#fff;border-color:#111a2b}
   .rec .price{font-size:11.5px;color:var(--amber)}
 
+  body.dockon .main{padding-right:330px}
+  body.dockon .topbar{padding-right:330px}
+  .dock{position:fixed;top:12px;right:12px;width:306px;max-height:calc(100vh - 24px);
+    overflow:auto;z-index:60;display:flex;flex-direction:column;gap:10px;
+    transition:opacity .15s}
+  .dock[hidden]{display:none}
+  .dock .card{margin:0!important}
+  .dock .dockhead{display:flex;align-items:center;justify-content:space-between;
+    gap:8px;padding:8px 12px;border-radius:12px;background:#131c2a;color:#cfe0ff;
+    font-size:12.5px;font-weight:600;border:1px solid #22304a;cursor:move;user-select:none}
+  .dock .dockhead button{background:transparent;border:0;color:#94a3b8;font-size:15px;
+    cursor:pointer;line-height:1;padding:0 2px}
+  .dock .dockhead button:hover{color:#e2e8f0}
+  .dockpill{position:fixed;top:14px;right:14px;z-index:60;border:1px solid #dbe3f0;
+    background:#fff;color:#334155;border-radius:999px;padding:7px 14px;font-size:12.5px;
+    cursor:pointer;box-shadow:0 6px 18px rgba(15,23,42,.10);font-weight:600}
+  .dockpill:hover{border-color:#9fb6e0;color:#1d4ed8}
+  .dockpill b{color:#1d4ed8;font-variant-numeric:tabular-nums}
   .taskwrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:14px;align-items:start}
   .taskitem{padding:10px 12px;border-radius:12px;border:1px solid transparent;cursor:pointer}
   .taskitem:hover{background:#f6f8fc}
@@ -112,7 +130,7 @@
   .badge.waiting{background:#fff4e2;color:#b45309}
   .badge.failed,.badge.rejected,.badge.over_budget{background:#fdeaea;color:#b91c1c}
 
-  .detailwrap{display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:14px;align-items:start}
+  .detailwrap{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
   @media(max-width:1250px){
     .taskwrap{grid-template-columns:1fr}
     .detailwrap{grid-template-columns:1fr}
@@ -253,6 +271,11 @@
   </aside>
 
   <main class="main">
+  <aside class="dock" id="dock" hidden>
+    <div class="dockhead"><span>看板 · 本单花费</span><button id="btnDockHide" title="收起到右上角">—</button></div>
+    <div id="dockBody"></div>
+  </aside>
+  <button class="dockpill" id="dockPill" hidden>看板 <b id="pillCost">0.000</b> 元</button>
     <div class="topbar">
       <h1 id="viewTitle">我的团队</h1>
       <span class="chip" id="projKind">—</span>
@@ -456,6 +479,7 @@ async function load(pid){
   const st = await api("/api/state"+q);
   S.projects=st.projects; S.pid=st.pid; S.employees=st.employees; S.tasks=st.tasks;
   S.stats=st.stats||[];
+  S.has_key = !!st.has_key;
   renderProj(); renderTeam(); renderTasks();
   renderKeyBar();
   $("#todayCost").textContent = money(S.stats.reduce((a,r)=>a+(r.cost||0),0)) + " 元";
@@ -627,9 +651,12 @@ function renderDetail(){
             : '<div class="empty">还没开始。点上面「开始」，这里会逐句出现它们说的话。</div>'}
         </div>
       </div>
-      <div>
+    </div>`;
+
+  const dock = $("#dock"), pill = $("#dockPill");
+  if (dock) {
+    $("#dockBody").innerHTML = `
         <div class="card" style="margin-bottom:14px">
-          <div class="subhead" style="margin-top:0">看板</div>
           <div class="kpis">
             <div class="kpi"><b>${money(t.total_cost)}</b><span>本单花费（元）</span></div>
             <div class="kpi"><b>${num(tok)}</b><span>token 合计</span></div>
@@ -649,8 +676,13 @@ function renderDetail(){
           <table><thead><tr><th>员工</th><th class="num">次数</th><th class="num">token</th>
             <th class="num">元</th></tr></thead><tbody>${rows}</tbody></table>
         </div>
-      </div>
-    </div>`;
+      </div>`;
+    $("#pillCost").textContent = money(t.total_cost || 0);
+    const collapsed = localStorage.getItem("dockCollapsed") === "1";
+    dock.hidden = collapsed;
+    pill.hidden = !collapsed;
+    if (S.view === "tasks") document.body.classList.add("dockon");
+  }
 
 $("#btnRun").onclick = async () => {
     try{ await postJSON(`/api/tasks/${t.id}/start`,{}); toast("开工了"); }
@@ -723,6 +755,15 @@ function setView(v){
   ["team","hire","tasks","dash","chat"].forEach(k=>{
     const el=$("#view-"+k); if(el) el.style.display = k===v ? "" : "none";
   });
+  const dk = $("#dock"), pl = $("#dockPill");
+  if (dk && pl) {
+    const on = v === "tasks" && S.detail;
+    const collapsed = localStorage.getItem("dockCollapsed") === "1";
+    dk.hidden = !on || collapsed;
+    pl.hidden = !on || !collapsed;
+    document.body.classList.toggle("dockon", !!(on && !collapsed));
+  }
+
   $("#viewTitle").textContent = {team:"我的团队",hire:"招募市场",tasks:"任务",
                                  dash:"老板看板",chat:"找人聊天"}[v];
   $("#btnOpenHire").style.display = v==="hire" ? "none" : "inline-block";
@@ -871,6 +912,18 @@ $("#btnSaveEmp").onclick = async () => {
     toast(S.editId ? "改好了" : "入职成功");
   }catch(err){ toast(err.message); }
 };
+
+$("#btnDockHide").onclick = () => {
+  localStorage.setItem("dockCollapsed", "1");
+  $("#dock").hidden = true; $("#dockPill").hidden = false;
+  document.body.classList.remove("dockon");
+};
+$("#dockPill").onclick = () => {
+  localStorage.setItem("dockCollapsed", "0");
+  $("#dockPill").hidden = true; $("#dock").hidden = false;
+  document.body.classList.add("dockon");
+};
+$("#dock").addEventListener("dblclick", e => { if (e.target.closest(".dockhead")) $("#btnDockHide").click(); });
 
 $("#btnNewWindow").onclick = async () => {
   try {
