@@ -356,11 +356,16 @@ KB_KINDS = ("reply", "deliverable", "image")
 
 
 def _kb_title(text):
+    """取第一行像标题的文字：跳过空行、短句、以及「假设：」「注：」这类前缀行。"""
     for line in (text or "").splitlines():
-        t = line.strip().lstrip("#").strip()
-        if t:
-            return t[:42]
-    return "未命名"
+        t = line.strip().lstrip("#").strip().strip("*").strip()
+        if len(t) < 6:
+            continue
+        if re.match(r"^(假设|注|说明|备注|前言)[:：]", t):
+            continue
+        return t[:42]
+    head = (text or "").strip().replace("\n", " ")
+    return head[:42] if len(head) >= 6 else "未命名"
 
 
 def kb_add(project_id, task_id, emp_id, title, content, kind="reply",
