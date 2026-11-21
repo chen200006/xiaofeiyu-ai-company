@@ -48,22 +48,25 @@ LOCK = threading.Lock()
 
 
 def _find_key():
-    env = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if env:
+    """key 只从两处来：环境变量，或 exe 同目录的 key.txt（不写进代码、不进仓库）。"""
+    env = (os.environ.get("DEEPSEEK_API_KEY") or "").strip()
+    if env.startswith("sk-"):
         return env
-    for path in (os.path.join(BASE, "key.txt"), r"D:\AA蓝色大肥鱼\qq-bot.py"):
+    for name in ("key.txt", ".key"):
+        fp = os.path.join(BASE, name)
+        if not os.path.exists(fp):
+            continue
         try:
-            with open(path, encoding="utf-8") as f:
-                m = re.search(r"sk-[A-Za-z0-9]{20,}", f.read())
-            if m:
-                return m.group(0)
+            txt = io.open(fp, encoding="utf-8-sig", errors="ignore").read()
         except Exception:
-            pass
+            continue
+        m = re.search(r"sk-[A-Za-z0-9]{20,}", txt)
+        if m:
+            return m.group(0)
     return ""
 
 
 API_KEY = _find_key()
-
 
 def db():
     c = sqlite3.connect(DB_PATH, check_same_thread=False)
