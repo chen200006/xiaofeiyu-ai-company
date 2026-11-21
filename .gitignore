@@ -1,0 +1,16 @@
+# 运行数据
+company.db
+company.db-wal
+company.db-shm
+key.txt
+
+# 打包产物
+build/
+dist/
+*.spec
+小肥鱼AI公司.exe
+
+# Python
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小肥鱼 AI 公司</title>
+<style>
+  :root{
+    --bg:#eef1f6; --card:#fff; --ink:#0f172a; --sub:#64748b; --line:#e5e9f2;
+    --rail:#0d1522; --rail2:#182234; --accent:#4f7cff;
+    --amber:#f59e0b; --green:#12a06a; --red:#e05252; --violet:#8b5cf6;
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 8px 24px -12px rgba(16,24,40,.18);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.65 "Microsoft YaHei","PingFang SC",system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  button{font-family:inherit}
+  .app{display:flex;min-height:100vh}
+
+  .rail{width:236px;flex:0 0 236px;background:var(--rail);color:#cbd5e1;
+    display:flex;flex-direction:column;padding:18px 14px;position:sticky;top:0;height:100vh}
+  .brand{display:flex;align-items:center;gap:10px;padding:2px 6px 16px}
+  .brand .logo{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;
+    background:linear-gradient(140deg,#4f7cff,#8b5cf6);font-size:18px}
+  .brand b{color:#fff;font-size:15px;letter-spacing:.3px;display:block}
+  .brand span{display:block;font-size:10.5px;color:#7c8aa0;letter-spacing:1.4px}
+  .proj{margin-bottom:16px}
+  .proj select{width:100%;background:var(--rail2);border:1px solid #24314a;color:#e2e8f0;
+    border-radius:10px;padding:9px 10px;font-size:13px;outline:none}
+  .proj .add{margin-top:8px;width:100%;background:transparent;border:1px dashed #2f3f5c;
+    color:#93a4bf;border-radius:10px;padding:7px;font-size:12px;cursor:pointer}
+  .proj .add:hover{border-color:var(--accent);color:#dbe6f7}
+  .nav{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+  .nav button{display:flex;align-items:center;background:transparent;border:0;
+    color:#a9b7cd;text-align:left;padding:10px 12px;border-radius:10px;font-size:13.5px;cursor:pointer}
+  .nav button:hover{background:#162032;color:#e6eefc}
+  .nav button.on{background:linear-gradient(90deg,rgba(79,124,255,.22),rgba(79,124,255,.06));
+    color:#fff;box-shadow:inset 2px 0 0 var(--accent)}
+  .rail .railfoot{margin-top:auto;font-size:11.5px;color:#7b8aa1;padding:12px 8px 2px;
+    border-top:1px solid #1b2536}
+  .rail .railfoot .line{display:flex;align-items:baseline;justify-content:space-between;
+    gap:8px;white-space:nowrap;padding:2px 0}
+  .rail .railfoot b{color:#e2e8f0;font-size:13px;font-variant-numeric:tabular-nums}
+
+  .main{flex:1;min-width:0;padding:20px 24px 28px}
+  .topbar{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .topbar h1{margin:0;font-size:19px;letter-spacing:.2px}
+  .chip{font-size:11.5px;padding:3px 9px;border-radius:20px;background:#e8edf9;color:#3b5bdb;
+    border:1px solid #d8e2f8}
+  .spacer{flex:1}
+  .btn{border:1px solid var(--line);background:#fff;color:#243044;border-radius:10px;
+    padding:9px 14px;font-size:13px;cursor:pointer;transition:.15s}
+  .btn:hover{border-color:#c9d3e6;background:#fbfcff}
+  .btn.primary{background:linear-gradient(180deg,#5b87ff,#3f6cf0);border-color:#3f6cf0;
+    color:#fff;box-shadow:0 6px 16px -8px rgba(63,108,240,.8)}
+  .btn.primary:hover{filter:brightness(1.05)}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--sub)}
+  .btn.ghost:hover{background:#eef2fa;color:var(--ink)}
+  .btn.sm{padding:5px 10px;font-size:12px;border-radius:8px}
+  .btn.danger{color:var(--red);border-color:#f6d7d7}
+  .btn.danger:hover{background:#fdf1f1}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+
+  .grid{display:grid;gap:14px}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(248px,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:16px;box-shadow:var(--shadow)}
+
+  .emp{display:flex;flex-direction:column;gap:8px}
+  .emp .head{display:flex;align-items:center;gap:10px}
+  .avatar{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:20px;
+    background:linear-gradient(150deg,#eef3ff,#e4ecff);border:1px solid #dfe7fa;flex:0 0 auto}
+  .emp .who b{display:block;font-size:14px}
+  .emp .who span{font-size:11.5px;color:var(--sub)}
+  .emp .duty{font-size:12.5px;color:#4a5568;display:-webkit-box;-webkit-line-clamp:3;
+    -webkit-box-orient:vertical;overflow:hidden;min-height:56px}
+  .emp .tags{display:flex;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--sub)}
+  .emp .acts{display:flex;gap:6px;margin-top:2px}
+
+  .hint{font-size:12.5px;color:var(--sub);margin:-4px 0 14px}
+  .empty{padding:34px;text-align:center;color:#94a3b8;font-size:13px;
+    border:1px dashed #dbe2ee;border-radius:16px;background:#f8fafd}
+
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .filters button{border:1px solid var(--line);background:#fff;border-radius:20px;
+    padding:6px 13px;font-size:12.5px;color:#475569;cursor:pointer}
+  .filters button.on{background:#111a2b;color:#fff;border-color:#111a2b}
+  .rec .price{font-size:11.5px;color:var(--amber)}
+
+  .taskwrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:14px;align-items:start}
+  .taskitem{padding:10px 12px;border-radius:12px;border:1px solid transparent;cursor:pointer}
+  .taskitem:hover{background:#f6f8fc}
+  .taskitem.on{background:#eef3ff;border-color:#d7e2ff}
+  .taskitem .t{font-size:13px;font-weight:600}
+  .taskitem .m{font-size:11.5px;color:var(--sub);display:flex;gap:8px;margin-top:2px}
+  .badge{font-size:10.5px;padding:1px 7px;border-radius:20px;background:#eef1f7;color:#64748b}
+  .badge.done{background:#e7f7ef;color:#0f7a52}
+  .badge.running{background:#e9f0ff;color:#3355cc}
+  .badge.waiting{background:#fff4e2;color:#b45309}
+  .badge.failed,.badge.rejected,.badge.over_budget{background:#fdeaea;color:#b91c1c}
+
+  .detailwrap{display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:14px;align-items:start}
+  @media(max-width:1250px){
+    .taskwrap{grid-template-columns:1fr}
+    .detailwrap{grid-template-columns:1fr}
+  }
+
+  .streamhead{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .streamhead h3{margin:0;font-size:15px}
+  .stream{max-height:calc(100vh - 250px);overflow:auto;padding-right:6px}
+  .msg{border:1px solid var(--line);border-radius:14px;padding:11px 14px;margin-bottom:10px;
+    background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .msg .hd{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--sub);margin-bottom:6px}
+  .msg .who{font-weight:700;color:#1e293b;font-size:12.5px}
+  .msg .meta{margin-left:auto;font-variant-numeric:tabular-nums;display:flex;gap:8px;align-items:center}
+  .msg .bd{white-space:pre-wrap;font-size:13.5px;line-height:1.8;max-height:300px;overflow:auto}
+  .msg.k-instruction{background:#f8fafc;border-style:dashed;box-shadow:none}
+  .msg.k-instruction .bd,.msg.k-note .bd{font-size:12.5px;color:#5b6675}
+  .msg.k-note{background:#f6f8fb;border-color:#e9edf5;box-shadow:none}
+  .msg.k-deliverable{background:linear-gradient(180deg,#f2fbf6,#ffffff);border-color:#c9e9d8}
+
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .kpi{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fbfcff}
+  .kpi b{display:block;font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:.3px}
+  .kpi span{font-size:11px;color:var(--sub)}
+  .bar{height:8px;border-radius:8px;background:#e9eef7;overflow:hidden;margin:8px 0 5px}
+  .bar > i{display:block;height:100%;width:0;border-radius:8px;
+    background:linear-gradient(90deg,#12a06a,#5ed39b);transition:width .4s}
+  .bar.warn > i{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+  .bar.over > i{background:linear-gradient(90deg,#e05252,#f18b8b)}
+  .steps{list-style:none;margin:0;padding:0}
+  .steps li{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12.5px;
+    border-bottom:1px dashed #eef1f7}
+  .steps li:last-child{border-bottom:0}
+  .dot{width:8px;height:8px;border-radius:50%;background:#cbd5e1;flex:0 0 auto}
+  .dot.done{background:var(--green)} .dot.running{background:var(--accent)}
+  .dot.waiting{background:var(--amber)} .dot.failed{background:var(--red)}
+  .bars{display:flex;align-items:flex-end;gap:5px;height:62px;padding-left:2px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:6px 4px;border-bottom:1px solid #f1f4f9}
+  th{color:var(--sub);font-weight:600;font-size:11.5px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .subhead{font-size:11.5px;color:var(--sub);letter-spacing:1px;margin:14px 0 6px;font-weight:600}
+
+  .mask{position:fixed;inset:0;background:rgba(9,14,23,.42);backdrop-filter:blur(2px);
+    display:none;align-items:center;justify-content:center;padding:20px;z-index:60}
+  .mask.on{display:flex}
+  .sheet{background:#fff;border-radius:18px;width:min(660px,100%);max-height:88vh;overflow:auto;
+    padding:22px;box-shadow:0 24px 60px -20px rgba(9,14,23,.4)}
+  .sheet h3{margin:0 0 2px;font-size:17px}
+  .sheet .lead{font-size:12.5px;color:var(--sub);margin-bottom:12px}
+  label.fl{display:block;font-size:11.5px;color:var(--sub);margin:12px 0 5px;letter-spacing:.3px}
+  input,textarea,select{width:100%;border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px;font:inherit;font-size:13px;background:#fff;color:var(--ink);outline:none}
+  input:focus,textarea:focus,select:focus{border-color:#a9c0f8;box-shadow:0 0 0 3px #eaf0ff}
+  textarea{resize:vertical;min-height:64px;line-height:1.7}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .pickrow{display:flex;align-items:center;gap:9px;border:1px solid var(--line);
+    border-radius:11px;padding:8px 10px;margin-bottom:7px;font-size:13px;background:#fbfcff}
+  .pickrow .n{width:20px;height:20px;border-radius:50%;background:#111a2b;color:#fff;
+    display:grid;place-items:center;font-size:11px;flex:0 0 auto}
+  .addrow{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+
+
+  /* 记忆管理 */
+  .memlist{max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:9px;
+    padding:6px 8px;background:#fbfcff;display:flex;flex-direction:column;gap:4px}
+  .memrow{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.6}
+  .memrow span{flex:1}
+  .memrow button{border:0;background:transparent;color:#ef4444;cursor:pointer;font-size:12px}
+  .memadd{display:flex;gap:8px;margin-top:6px}
+  /* 招募页页签 */
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .tabs button{background:transparent;border:0;border-bottom:2px solid transparent;
+    padding:8px 14px;font-size:13.5px;color:var(--sub);cursor:pointer}
+  .tabs button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:700}
+  /* 看板 */
+  .dash{display:grid;gap:14px}
+  .kpi4{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+  .kpi4 .kpi b{font-size:22px}
+  .ranks{display:flex;flex-direction:column;gap:9px}
+  .rank{display:grid;grid-template-columns:120px 1fr 76px;align-items:center;gap:10px;font-size:12.5px}
+  .rank .b{height:14px;border-radius:4px;background:linear-gradient(90deg,#5b87ff,#9dbdff)}
+  .rank .v{text-align:right;font-variant-numeric:tabular-nums;color:var(--sub)}
+  /* 聊天 */
+  .chatwrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:14px;align-items:start}
+  .chatitem{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:11px;cursor:pointer}
+  .chatitem:hover{background:#f6f8fc}
+  .chatitem.on{background:#eef3ff}
+  .chatitem .n{font-size:12.5px}
+  .bubble{margin-bottom:10px;display:flex;gap:8px}
+  .bubble .avatar{width:30px;height:30px;font-size:15px;border-radius:9px}
+  .bubble .body{border:1px solid var(--line);border-radius:12px;padding:9px 12px;font-size:13.5px;
+    line-height:1.8;white-space:pre-wrap;max-width:min(760px,calc(100% - 46px));background:#fff}
+  .bubble.me{flex-direction:row-reverse}
+  .bubble.me .body{background:#eef3ff;border-color:#d7e2ff}
+  .bubble .cost{font-size:10.5px;color:#b45309;margin-top:4px}
+  .chatbox{display:flex;gap:10px;margin-top:12px}
+  .chatbox textarea{min-height:52px;max-height:140px}
+  .chatbox .btn{white-space:nowrap;align-self:flex-end}
+  .emptychat{padding:40px;text-align:center;color:#94a3b8}
+  .toast{position:fixed;right:22px;bottom:22px;background:#0f172a;color:#fff;padding:10px 16px;
+    border-radius:11px;font-size:13px;opacity:0;transform:translateY(6px);transition:.2s;z-index:99;
+    box-shadow:0 12px 30px -10px rgba(9,14,23,.6)}
+  .toast.on{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="logo">🐋</div>
+      <div><b>小肥鱼 AI 公司</b><span>ONE-PERSON COMPANY</span></div>
+    </div>
+    <div class="proj">
+      <select id="projSel"></select>
+      <button class="add" id="btnNewProj">+ 新建项目</button>
+    </div>
+    <nav class="nav">
+      <button data-view="team" class="on">👥　我的团队</button>
+      <button data-view="hire">📇　招募市场</button>
+      <button data-view="tasks">🗂　任务</button>
+      <button data-view="dash">📊　老板看板</button>
+      <button data-view="chat">💬　找人聊天</button>
+    </nav>
+    <div class="railfoot">
+      <div class="line"><span>模型</span><b id="modelName">deepseek-chat</b></div>
+      <div class="line"><span>今日花费</span><b id="todayCost">0.000 元</b></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h1 id="viewTitle">我的团队</h1>
+      <span class="chip" id="projKind">—</span>
+      <span class="spacer"></span>
+      <button class="btn" id="btnNewTask">＋ 派一个活</button>
+      <button class="btn primary" id="btnOpenHire">招募员工</button>
+    </div>
+
+    <section id="view-team">
+      <div class="hint">每个人只干一件事。点「修改」可以改职责、换表情、改记忆开关。</div>
+      <div class="grid cards" id="teamGrid"></div>
+    </section>
+
+    <section id="view-hire" style="display:none">
+      <div class="hint">「我的员工库」是你自己写过的岗位，随时再招一次；「系统模板」是内置的 25 个，可以先招进来再改。</div>
+      <div class="tabs" id="hireTabs"></div>
+      <div class="filters" id="hireFilters"></div>
+      <div class="grid cards" id="hireGrid"></div>
+    </section>
+
+    <section id="view-tasks" style="display:none">
+      <div class="taskwrap">
+        <div class="card" style="padding:10px">
+          <div class="subhead" style="margin:4px 6px 8px">任务列表</div>
+          <div id="taskList"></div>
+        </div>
+        <div id="taskDetail">
+          <div class="empty">还没有选中任务。点右上「＋ 派一个活」开始。</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-dash" style="display:none">
+      <div class="hint">这里是钱的去向：谁花得多、哪个项目烧钱、什么状态卡住了。切「全部项目」看全公司。</div>
+      <div class="dash" id="dashBody"></div>
+    </section>
+
+    <section id="view-chat" style="display:none">
+      <div class="chatwrap">
+        <div class="card" style="padding:10px">
+          <div class="subhead" style="margin:4px 6px 8px">找谁聊</div>
+          <div id="chatList"></div>
+        </div>
+        <div id="chatPane"><div class="card emptychat">左边挑一个员工，直接跟他说话——不走流水线，就像发微信。</div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="mask" id="maskEmp">
+  <div class="sheet">
+    <h3 id="empSheetTitle">招一个员工</h3>
+    <div class="lead" id="empSheetLead">职责写得越具体，它干得越像人。一个岗位只干一件事最好。</div>
+    <div class="two">
+      <div><label class="fl">职位名</label><input id="e-title" placeholder="例：资深写手"></div>
+      <div><label class="fl">代号／昵称</label><input id="e-name" placeholder="例：小蓝"></div>
+    </div>
+    <label class="fl">头像表情</label>
+    <div class="addrow" id="emojiRow" style="margin-top:0"></div>
+    <label class="fl">职责（一段话）</label>
+    <textarea id="e-duty" placeholder="例：负责把研究员的材料写成 3000 字报告，结构清楚、有例子、不用套话。"></textarea>
+    <div class="two">
+      <div><label class="fl">输入要求</label><textarea id="e-in" placeholder="例：任务目标 + 上游材料"></textarea></div>
+      <div><label class="fl">输出要求</label><textarea id="e-out" placeholder="例：Markdown，含小标题"></textarea></div>
+    </div>
+    <div class="two">
+      <div><label class="fl">模型</label>
+        <select id="e-model">
+          <option value="deepseek-chat">deepseek-chat（主力，便宜）</option>
+          <option value="deepseek-reasoner">deepseek-reasoner（更慢更贵）</option>
+        </select>
+      </div>
+      <div><label class="fl">记忆</label>
+        <select id="e-memory">
+          <option value="1">记住此前做过的活</option>
+          <option value="0">每次干净开始</option>
+        </select>
+      </div>
+    </div>
+    <div id="e-membox" style="display:none;margin-top:14px">
+      <label class="fl">他记住的事（会带进每一次任务和聊天）</label>
+      <div class="memlist" id="e-memlist"></div>
+      <div class="memadd">
+        <input id="e-memnew" placeholder="例：不要用“随着…”开头；字数不够就补，别水" style="flex:1">
+        <button class="btn sm" id="btnAddMem">记一条</button>
+      </div>
+    </div>
+    <label class="fl" style="display:flex;align-items:center;gap:8px;margin-top:14px">
+      <input type="checkbox" id="e-savepreset" style="width:auto">
+      同时存进「我的员工库」，下次直接招募</label>
+    <div class="foot">
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btnSaveEmp">入职</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="maskProj">
+  <div class="sheet" style="width:min(480px,100%)">
+    <h3>新建项目</h3>
+    <div class="lead">项目决定推荐哪些岗位。每个项目的人和任务互不打扰。</div>
+    <label class="fl">项目名</label><input id="p-name" placeholder="例：直播方案整改">
+    <label class="fl">项目类型</label>
+    <select id="p-kind">
+      <option>论文报告</option><option>短视频</option><option>方案提案</option>
+      <option>代码</option><option>数据调研</option>
+    </select>
+    <label class="fl">一句话目标（可空）</label><input id="p-goal" placeholder="例：下周交一份 40 页方案">
+    <div class="foot">
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btnSaveProj">建项目</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="maskTask">
+  <div class="sheet">
+    <h3>派一个活</h3>
+    <div class="lead">按顺序点员工 = 流水线顺序；勾「等老板批」的那一步会停下来等你点通过。</div>
+    <label class="fl">任务名</label><input id="t-title" placeholder="例：写一份 3000 字课程论文">
+    <label class="fl">目标（要交出什么）</label>
+    <textarea id="t-goal" placeholder="例：题目《…》，3000 字、有数据、有案例、引用规范。"></textarea>
+    <label class="fl">验收标准</label><input id="t-accept" placeholder="例：字数够、有小标题、没有空话、能直接交">
+    <div class="two">
+      <div><label class="fl">预算（元）</label><input id="t-budget" type="number" step="0.5" min="0.5" value="5"></div>
+      <div><label class="fl">协作方式</label>
+        <select id="t-mode">
+          <option value="relay">接力：上一个喂下一个</option>
+          <option value="parallel">并排：各写一摊再拼</option>
+          <option value="review">审稿：最后一个岗位挑错定稿</option>
+        </select>
+      </div>
+    </div>
+    <label class="fl">流水线</label>
+    <div class="row" style="margin-bottom:8px">
+      <select id="t-pipe" style="flex:1"><option value="">不用模板，手动挑人</option></select>
+      <button class="btn sm" id="btnSavePipe">当前顺序存成模板</button>
+    </div>
+    <div id="pickList"></div>
+    <div class="foot">
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btnSaveTask">派下去</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const S = { pid:0, projects:[], employees:[], tasks:[], stats:[], presets:[],
+            view:"team", cur:null, detail:null, picked:[], appr:new Set(), editId:null,
+            es:null, fam:"全部", emoji:"🧑", tab:"mine", dashScope:"project",
+            dash:null, chatEmp:null, chatMsgs:[], chatting:false, pipes:[], memRows:[] };
+
+const toast = t => { const el=$("#toast"); el.textContent=t; el.classList.add("on");
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("on"),1900); };
+const money = n => (Number(n)||0).toFixed(3);
+const num = n => (Number(n)||0).toLocaleString("en-US");
+const em2 = x => String(x == null ? "" : x).replace(/\uFE0F/g, "");
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const STATUS = {pending:"待派",running:"干活中",waiting:"等你批",done:"已完成",
+                failed:"失败",rejected:"被退回",over_budget:"超预算"};
+
+async function api(path, opt){
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || ("HTTP "+r.status));
+  return j;
+}
+const postJSON = (p, b) => api(p, {method:"POST", headers:{"Content-Type":"application/json"},
+                                   body: JSON.stringify(b)});
+
+async function load(pid){
+  const q = pid ? ("?pid="+pid) : "";
+  const st = await api("/api/state"+q);
+  S.projects=st.projects; S.pid=st.pid; S.employees=st.employees; S.tasks=st.tasks;
+  S.stats=st.stats||[];
+  renderProj(); renderTeam(); renderTasks();
+  $("#todayCost").textContent = money(S.stats.reduce((a,r)=>a+(r.cost||0),0)) + " 元";
+  const pj = S.projects.find(p=>p.id===S.pid);
+  $("#projKind").textContent = pj ? pj.kind : "—";
+  if(S.view==="hire") renderHire();
+  if(S.cur) selectTask(S.cur);
+}
+
+function renderProj(){
+  $("#projSel").innerHTML = S.projects.length
+    ? S.projects.map(p=>`<option value="${p.id}" ${p.id===S.pid?"selected":""}>${esc(p.name)}</option>`).join("")
+    : '<option value="0">（还没有项目）</option>';
+}
+
+function renderTeam(){
+  const cards = S.employees.map(e=>`
+    <div class="card emp">
+      <div class="head">
+        <div class="avatar">${esc(em2(e.emoji)||"🧑")}</div>
+        <div class="who"><b>${esc(e.title)}</b><span>${esc(e.name)}</span></div>
+      </div>
+      <div class="duty">${esc(e.duty||"还没写职责")}</div>
+      <div class="tags">
+        <span class="badge">${e.memory?"有记忆":"无记忆"}</span>
+        <span class="badge">${esc(e.model)}</span>
+      </div>
+      <div class="acts">
+        <button class="btn sm" data-chat="${e.id}">聊天</button>
+        <button class="btn sm" data-edit="${e.id}">修改</button>
+        <button class="btn sm ghost danger" data-del="${e.id}">开除</button>
+      </div>
+    </div>`).join("");
+  const addCard = `
+    <div class="card emp" style="border-style:dashed;background:#fafbfe;align-items:center;
+        justify-content:center;min-height:200px;text-align:center;cursor:pointer" id="cardManual">
+      <div style="font-size:26px">＋</div>
+      <b>自己写一个岗位</b>
+      <span class="hint" style="margin:0">不想用模板时点这里</span>
+    </div>`;
+  $("#teamGrid").innerHTML = (S.employees.length ? cards : "") + addCard;
+  if(!S.employees.length){
+    $("#teamGrid").innerHTML = `
+      <div class="card" style="grid-column:1/-1;display:flex;align-items:center;gap:18px;
+          padding:22px 24px;background:linear-gradient(120deg,#f7faff,#ffffff)">
+        <div style="font-size:34px">🏢</div>
+        <div style="flex:1">
+          <b style="font-size:15px">这个项目还没有员工</b>
+          <div class="hint" style="margin:2px 0 0">
+            去「招募市场」按岗位招人——论文报告类会排在前面；也可以自己写一个。</div>
+        </div>
+        <button class="btn primary" id="btnGoHire">去招募市场</button>
+      </div>` + addCard;
+    $("#btnGoHire").onclick = () => setView("hire");
+  }
+}
+
+async function renderHire(){
+  const d = await api("/api/presets?pid="+S.pid);
+  S.presets = d.presets||[]; S.mine = d.mine||[]; S.sys = d.system||[];
+  $("#hireTabs").innerHTML =
+    `<button data-tab="mine" class="${S.tab==="mine"?"on":""}">我的员工库 ${S.mine.length}</button>` +
+    `<button data-tab="sys" class="${S.tab==="sys"?"on":""}">系统模板 ${S.sys.length}</button>`;
+  const src = S.tab==="mine" ? S.mine : S.sys;
+  const fams = ["全部", ...new Set(src.map(p=>p.family))];
+  $("#hireFilters").innerHTML = fams.length>2 ? fams.map(f=>{
+    const n = f==="全部" ? src.length : src.filter(p=>p.family===f).length;
+    return `<button data-fam="${esc(f)}" class="${S.fam===f?"on":""}">${esc(f)} ${n}</button>`;
+  }).join("") : "";
+  const list = src.filter(p=>S.fam==="全部" || p.family===S.fam);
+  const cards = list.map(p=>`
+    <div class="card emp rec">
+      <div class="head">
+        <div class="avatar">${esc(em2(p.emoji))}</div>
+        <div class="who"><b>${esc(p.title)}</b><span>${esc(p.family||"")} · ${esc(p.tag||"自定义")}</span></div>
+      </div>
+      <div class="duty">${esc(p.duty)}</div>
+      <div class="acts">
+        <button class="btn sm primary" data-hire="${p.id}">招募</button>
+        ${p.mine?`<button class="btn sm ghost danger" data-delpreset="${p.id}">删掉</button>`:""}
+      </div>
+    </div>`).join("");
+  const emptyMine = `<div class="card" style="grid-column:1/-1;display:flex;align-items:center;gap:16px;
+      padding:22px 24px;background:linear-gradient(120deg,#f7faff,#fff)">
+      <div style="font-size:32px">🗃</div>
+      <div style="flex:1"><b style="font-size:15px">员工库还是空的</b>
+        <div class="hint" style="margin:2px 0 0">
+          点右上「写一个新员工」从零写一个；或去「我的团队」里把人「修改」一下，勾「同时存进我的员工库」。</div></div>
+      <button class="btn primary" id="btnWriteEmp">写一个新员工</button></div>`;
+  $("#hireGrid").innerHTML = (list.length ? cards : (S.tab==="mine" ? emptyMine : '<div class="empty">这个分类下还没有模板</div>'));
+  const bw = $("#btnWriteEmp"); if(bw) bw.onclick = () => openEmp(null);
+}
+
+function renderTasks(){
+  const box=$("#taskList");
+  if(!S.tasks.length){ box.innerHTML = '<div class="empty" style="padding:22px">还没有任务</div>'; return; }
+  box.innerHTML = S.tasks.map(t=>`
+    <div class="taskitem ${S.cur===t.id?"on":""}" data-task="${t.id}">
+      <div class="t">${esc(t.title)}</div>
+      <div class="m"><span class="badge ${t.status}">${STATUS[t.status]||t.status}</span>
+        <span>${money(t.total_cost)} 元</span></div>
+    </div>`).join("");
+}
+
+async function selectTask(id){
+  S.cur=id; renderTasks();
+  if(S.es){ S.es.close(); S.es=null; }
+  const d = await api("/api/tasks/"+id);
+  S.detail=d; renderDetail();
+  S.es = new EventSource("/api/events/"+id);
+  S.es.onmessage = ev => { try{ onEvent(JSON.parse(ev.data)); }catch(e){} };
+}
+
+function msgHTML(m){
+  const kname={instruction:"派活",reply:"产出",note:"系统",deliverable:"成品"}[m.kind]||m.kind;
+  const cost=(m.tokens_in||m.tokens_out)
+    ? `<span>${num(m.tokens_in)} 入 / ${num(m.tokens_out)} 出</span>
+       <span style="color:#b45309">${money(m.cost)} 元</span><span style="opacity:.6">${m.ms||0}ms</span>`:"";
+  const copy=(m.kind==="reply"||m.kind==="deliverable")
+    ? `<button class="btn sm ghost" data-copy="${m.id}" style="padding:1px 6px">复制</button>`:"";
+  return `<div class="msg k-${m.kind}">
+    <div class="hd"><span class="who">${esc(m.sender)} → ${esc(m.receiver)}</span>
+      <span class="badge">${kname}</span><span class="meta">${copy}${cost}</span></div>
+    <div class="bd">${esc(m.content)}</div></div>`;
+}
+
+function renderDetail(){
+  const d=S.detail, t=d.task;
+  const steps=d.steps.map((s,i)=>`
+    <li><span class="dot ${s.status}"></span>
+      <span style="flex:1">${i+1}. ${esc(s.emp_title||"未命名")}</span>
+      <span style="color:var(--sub);font-variant-numeric:tabular-nums">${money(s.cost)}</span>
+      ${s.status==="waiting"?`<button class="btn sm primary" data-ok="${s.id}">通过</button>
+        <button class="btn sm" data-no="${s.id}">退回</button>`:""}
+    </li>`).join("") || '<li style="color:#94a3b8">这条流水线还没排人</li>';
+  const replies=(d.messages||[]).filter(m=>m.kind==="reply");
+  const max=Math.max(0.0001,...replies.map(r=>r.cost||0));
+  const bars=replies.map(r=>{
+    const h=Math.max(4,(r.cost||0)/max*54);
+    return `<i title="${esc(r.sender)} ${money(r.cost)} 元" style="display:block;flex:0 0 16px;height:${h.toFixed(1)}px;background:linear-gradient(180deg,#6ea8ff,#3f6cf0);border-radius:3px 3px 0 0"></i>`;
+  }).join("")||'<span style="font-size:11.5px;color:#94a3b8">跑起来后显示每句话的钱</span>';
+  const tok=(t.total_in||0)+(t.total_out||0);
+  const pct=Math.min(100,(t.total_cost||0)/(t.budget||5)*100);
+  const running=["running","waiting"].includes(t.status);
+  const rows=S.stats.map(r=>`<tr><td>${esc(r.sender)}</td><td class="num">${r.n}</td>
+      <td class="num">${num((r.tin||0)+(r.tout||0))}</td><td class="num">${money(r.cost)}</td></tr>`).join("")
+    || '<tr><td colspan="4" style="color:#94a3b8">还没有数据</td></tr>';
+
+  bindExport();
+  $("#taskDetail").innerHTML = `
+    <div class="detailwrap">
+      <div class="card">
+        <div class="streamhead">
+          <h3 style="flex:1 1 100%">${esc(t.title)}</h3>
+          <span class="badge ${t.status}">${STATUS[t.status]||t.status}</span>
+          <span class="hint" style="margin:0">${money(d.task.total_cost||0)} 元 · ${num((d.task.total_in||0)+(d.task.total_out||0))} token</span>
+          <span class="spacer"></span>
+          <button class="btn sm ghost" id="btnExportDocx" title="导出成 Word 文档（.docx）">Word</button>
+          <button class="btn sm ghost" id="btnExportMd" title="导出成 Markdown 文本（.md）">MD</button>
+          <button class="btn sm ${running?"":"primary"}" id="btnRun" ${running?"disabled":""}>
+            ${t.status==="done"?"再跑一遍":"开始"}</button>
+          <button class="btn sm ghost" id="btnDelTask">删除</button>
+        </div>
+        <div class="stream" id="stream">
+          ${(d.messages||[]).length? d.messages.map(msgHTML).join("")
+            : '<div class="empty">还没开始。点上面「开始」，这里会逐句出现它们说的话。</div>'}
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="subhead" style="margin-top:0">看板</div>
+          <div class="kpis">
+            <div class="kpi"><b>${money(t.total_cost)}</b><span>本单花费（元）</span></div>
+            <div class="kpi"><b>${num(tok)}</b><span>token 合计</span></div>
+          </div>
+          <div class="bar ${pct>99?"over":pct>75?"warn":""}"><i style="width:${pct.toFixed(1)}%"></i></div>
+          <div style="font-size:11px;color:var(--sub)">预算 ${money(t.budget)} 元 · 已用
+            ${pct<1?pct.toFixed(2):pct.toFixed(1)}%</div>
+          <div class="subhead">每句话的钱</div>
+          <div class="bars">${bars}</div>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="subhead" style="margin-top:0">步骤</div>
+          <ul class="steps">${steps}</ul>
+        </div>
+        <div class="card">
+          <div class="subhead" style="margin-top:0">谁花的钱（本项目累计）</div>
+          <table><thead><tr><th>员工</th><th class="num">次数</th><th class="num">token</th>
+            <th class="num">元</th></tr></thead><tbody>${rows}</tbody></table>
+        </div>
+      </div>
+    </div>`;
+
+$("#btnRun").onclick = async () => {
+    try{ await postJSON(`/api/tasks/${t.id}/start`,{}); toast("开工了"); }
+    catch(e){ toast(e.message); }
+  };
+  $("#btnDelTask").onclick = async () => {
+    if(!confirm("删掉这个任务和它的全部对话？")) return;
+    await postJSON(`/api/tasks/${t.id}/delete`,{});
+    S.cur=null; S.detail=null;
+    $("#taskDetail").innerHTML='<div class="empty">任务已删除</div>';
+    await load(S.pid);
+  };
+  const st=$("#stream"); if(st) st.scrollTop = st.scrollHeight;
+}
+
+function onEvent(ev){
+  if(!S.detail) return;
+  if(ev.type==="message"){
+    S.detail.messages.push(ev.data);
+    const st=$("#stream");
+    if(st){
+      if(st.querySelector(".empty")) st.innerHTML="";
+      st.insertAdjacentHTML("beforeend", msgHTML(ev.data));
+      st.scrollTop=st.scrollHeight;
+    }
+  }
+  if(ev.type==="step"){
+    const i=S.detail.steps.findIndex(s=>s.id===ev.data.id);
+    if(i>=0) S.detail.steps[i]=Object.assign({}, S.detail.steps[i], ev.data);
+    else S.detail.steps.push(ev.data);
+  }
+  if(ev.type==="task"){
+    S.detail.task=Object.assign({}, S.detail.task, ev.data);
+    const k=S.tasks.findIndex(t=>t.id===ev.data.id);
+    if(k>=0) S.tasks[k]=Object.assign({}, S.tasks[k], ev.data);
+    renderDetail(); renderTasks();
+    if(["done","failed","over_budget"].includes(ev.data.status)) refreshStats();
+  }
+}
+
+async function refreshStats(){
+  try{
+    const st = await api("/api/state?pid="+S.pid);
+    S.stats = st.stats || [];
+    $("#todayCost").textContent = money(S.stats.reduce((a,r)=>a+(r.cost||0),0)) + " 元";
+    if(S.detail) renderDetail();
+  }catch(_){}
+}
+
+function setView(v){
+  S.view=v;
+  $$(".nav button").forEach(b=>b.classList.toggle("on", b.dataset.view===v));
+  ["team","hire","tasks","dash","chat"].forEach(k=>{
+    const el=$("#view-"+k); if(el) el.style.display = k===v ? "" : "none";
+  });
+  $("#viewTitle").textContent = {team:"我的团队",hire:"招募市场",tasks:"任务",
+                                 dash:"老板看板",chat:"找人聊天"}[v];
+  $("#btnOpenHire").style.display = v==="hire" ? "none" : "inline-block";
+  if(v==="hire") renderHire();
+  if(v==="dash") renderDash();
+  if(v==="chat") renderChatList();
+  if(v==="tasks" && !S.cur && S.tasks.length) selectTask(S.tasks[0].id);
+}
+
+document.addEventListener("click", async e => {
+  const nav=e.target.closest("[data-view]"); if(nav){ setView(nav.dataset.view); return; }
+  const fam=e.target.closest("[data-fam]"); if(fam){ S.fam=fam.dataset.fam; renderHire(); return; }
+  const tab=e.target.closest("[data-tab]");
+  if(tab){ S.tab=tab.dataset.tab; S.fam="全部"; renderHire(); return; }
+  const dp=e.target.closest("[data-delpreset]");
+  if(dp){
+    if(confirm("从员工库里删掉这个岗位模板？（不影响已经在团队里的人）")){
+      await postJSON("/api/presets/"+dp.dataset.delpreset, {_delete:true});
+      await renderHire(); toast("删了");
+    }
+    return;
+  }
+  const chatBtn=e.target.closest("[data-chat]");
+  if(chatBtn){ setView("chat"); await renderChatList(); openChat(Number(chatBtn.dataset.chat)); return; }
+  const pick=e.target.closest("[data-chatpick]");
+  if(pick){ openChat(Number(pick.dataset.chatpick)); return; }
+  const scope=e.target.closest("[data-scope]");
+  if(scope){ S.dashScope=scope.dataset.scope; renderDash(); return; }
+  const hire=e.target.closest("[data-hire]");
+  if(hire){
+    const p=S.presets.find(x=>x.id===Number(hire.dataset.hire));
+    openEmp(null, p); return;
+  }
+  const edit=e.target.closest("[data-edit]"); if(edit){ openEmp(Number(edit.dataset.edit)); return; }
+  const del=e.target.closest("[data-del]");
+  if(del){
+    if(confirm("确定开除这个员工？他跑过的记录保留在看板里。")){
+      await postJSON("/api/employees/"+del.dataset.del, {_delete:true});
+      await load(S.pid); toast("已开除");
+    }
+    return;
+  }
+  if(e.target.closest("#cardManual")){ openEmp(null); return; }
+  const task=e.target.closest("[data-task]"); if(task){ selectTask(Number(task.dataset.task)); return; }
+  const ok=e.target.closest("[data-ok]");
+  if(ok){ await postJSON(`/api/steps/${ok.dataset.ok}/approve`,{}); toast("批了"); return; }
+  const no=e.target.closest("[data-no]");
+  if(no){ await postJSON(`/api/steps/${no.dataset.no}/reject`,{}); toast("退回了"); return; }
+  const cp=e.target.closest("[data-copy]");
+  if(cp){
+    const m=((S.detail&&S.detail.messages)||[]).find(x=>x.id===Number(cp.dataset.copy));
+    if(m){
+      try{ await navigator.clipboard.writeText(m.content); toast("复制了 "+m.content.length+" 字"); }
+      catch(_){ toast("浏览器不让复制，请手动选中"); }
+    }
+    return;
+  }
+  if(e.target.closest("[data-close]")) $$(".mask").forEach(m=>m.classList.remove("on"));
+  const em=e.target.closest("[data-emoji]");
+  if(em){ S.emoji=em.dataset.emoji; markEmoji(); }
+});
+
+const EMOJIS=["🧑","🐟","🐳","🐋","📚","📖","📝","📋","📊","📈","📉","🎯","🧩","🎬","💬","🔍","🔎","🧪","🧮","✏"];
+
+$("#btnAddMem").onclick = addMem;
+$("#t-pipe").addEventListener("change", ev => { if(ev.target.value) applyPipe(ev.target.value); });
+$("#btnSavePipe").onclick = async () => {
+  if(!S.picked.length){ toast("先挑几个人再存模板"); return; }
+  const name = prompt("给这条流水线起个名（以后一键用）：", "常用流程");
+  if(!name) return;
+  await postJSON("/api/pipelines", {project_id:S.pid, name, emp_ids:S.picked});
+  await loadPipes(); toast("模板存好了");
+};
+
+function openEmp(id, preset){
+  S.editId=id;
+  const e = id ? S.employees.find(x=>x.id===id) : null;
+  $("#empSheetTitle").textContent = id ? "修改员工" : "招一个员工";
+  $("#empSheetLead").textContent = id
+    ? "改完点保存，下一单就按新职责干活（已经跑过的记录不变）。"
+    : "职责写得越具体，它干得越像人。一个岗位只干一件事最好。";
+  $("#btnSaveEmp").textContent = id ? "保存" : "入职";
+  $("#e-title").value = e ? e.title : (preset?preset.title:"");
+  $("#e-name").value  = e ? e.name  : (preset?(preset.name||"小朋友"):"");
+  $("#e-duty").value  = e ? (e.duty||"") : (preset?preset.duty:"");
+  $("#e-in").value    = e ? (e.input_spec||"") : (preset?preset.input_spec:"");
+  $("#e-out").value   = e ? (e.output_spec||"") : (preset?preset.output_spec:"");
+  $("#e-model").value = e ? e.model : "deepseek-chat";
+  $("#e-memory").value= e ? String(e.memory) : "1";
+  S.emoji = e ? (e.emoji||"🧑") : (preset?(preset.emoji||"🧑"):"🧑");
+  const sp=$("#e-savepreset"); if(sp) sp.checked = !id;
+  loadMem(id);
+  $("#emojiRow").innerHTML = EMOJIS.map(x=>
+    `<button class="btn sm" data-emoji="${x}" style="font-size:15px;padding:4px 8px">${x}</button>`).join("");
+  markEmoji();
+  $("#maskEmp").classList.add("on");
+}
+
+function markEmoji(){
+  $$("#emojiRow [data-emoji]").forEach(b=>
+    b.style.borderColor = b.dataset.emoji===S.emoji ? "#3f6cf0" : "var(--line)");
+}
+
+$("#btnSaveEmp").onclick = async () => {
+  const body = {
+    title: $("#e-title").value.trim(), name: $("#e-name").value.trim() || "员工",
+    emoji: S.emoji || "🧑", duty: $("#e-duty").value.trim(),
+    input_spec: $("#e-in").value.trim(), output_spec: $("#e-out").value.trim(),
+    model: $("#e-model").value, memory: Number($("#e-memory").value),
+    project_id: S.pid, save_preset: $("#e-savepreset").checked
+  };
+  if(!body.title) return toast("至少写个职位名");
+  try{
+    if(S.editId) await postJSON("/api/employees/"+S.editId, body);
+    else await postJSON("/api/employees", body);
+    $$(".mask").forEach(m=>m.classList.remove("on"));
+    await load(S.pid);
+    toast(S.editId ? "改好了" : "入职成功");
+  }catch(err){ toast(err.message); }
+};
+
+$("#btnNewProj").onclick = () => {
+  $("#p-name").value=""; $("#p-goal").value=""; $("#maskProj").classList.add("on");
+};
+$("#btnSaveProj").onclick = async () => {
+  const b={name:$("#p-name").value.trim()||"新项目", kind:$("#p-kind").value,
+           goal:$("#p-goal").value.trim()};
+  try{
+    const r=await postJSON("/api/projects", b);
+    $$(".mask").forEach(m=>m.classList.remove("on"));
+    S.cur=null; S.detail=null;
+    await load(r.project.id); setView("team"); toast("项目建好了");
+  }catch(err){ toast(err.message); }
+};
+$("#projSel").onchange = e => { S.cur=null; S.detail=null; load(Number(e.target.value)); };
+
+$("#btnNewTask").onclick = () => {
+  if(!S.employees.length) return toast("先去「招募市场」招人");
+  S.picked=[]; S.appr=new Set();
+  $("#t-title").value=""; $("#t-goal").value=""; $("#t-accept").value=""; $("#t-budget").value="5";
+  renderPick(); loadPipes(); $("#maskTask").classList.add("on");
+};
+
+function renderPick(){
+  let html = S.picked.length ? S.picked.map((id,i)=>{
+    const e=S.employees.find(x=>x.id===id)||{};
+    return `<div class="pickrow"><span class="n">${i+1}</span>
+      <span style="flex:1">${esc(e.emoji||"")} ${esc(e.title||"")}
+        <span style="color:#94a3b8">${esc(e.name||"")}</span></span>
+      <label style="margin:0;font-size:11.5px;display:flex;gap:5px;align-items:center">
+        <input type="checkbox" data-appr="${i}" ${S.appr.has(i)?"checked":""} style="width:auto">
+        等老板批</label>
+      <button class="btn sm ghost" data-rm="${i}">移除</button></div>`;
+  }).join("") : '<div class="empty" style="padding:18px">点下面的员工，按流水线顺序加进来</div>';
+  html += `<div class="addrow">` + S.employees.filter(e=>!S.picked.includes(e.id))
+    .map(e=>`<button class="btn sm" data-add="${e.id}">＋ ${esc(e.emoji||"")} ${esc(e.title)}</button>`).join("")
+    + `</div>`;
+  $("#pickList").innerHTML = html;
+}
+
+document.addEventListener("click", e=>{
+  const add=e.target.closest("[data-add]");
+  if(add){ S.picked.push(Number(add.dataset.add)); renderPick(); return; }
+  const rm=e.target.closest("[data-rm]");
+  if(rm){ S.picked.splice(Number(rm.dataset.rm),1); S.appr=new Set(); renderPick(); return; }
+  const ap=e.target.closest("[data-appr]");
+  if(ap){ const i=Number(ap.dataset.appr); ap.checked ? S.appr.add(i) : S.appr.delete(i); }
+});
+
+$("#btnSaveTask").onclick = async () => {
+  if(!S.picked.length) return toast("流水线至少要有一个人");
+  const b={project_id:S.pid, title:$("#t-title").value.trim()||"未命名任务",
+    goal:$("#t-goal").value.trim(), accept:$("#t-accept").value.trim(),
+    budget:Number($("#t-budget").value||5), mode:$("#t-mode").value,
+    emp_ids:S.picked, approval_idx:[...S.appr]};
+  try{
+    const r=await postJSON("/api/tasks", b);
+    $$(".mask").forEach(m=>m.classList.remove("on"));
+    await load(S.pid); setView("tasks"); await selectTask(r.task_id);
+    toast("派下去了，点「开始」");
+  }catch(err){ toast(err.message); }
+};
+$("#btnOpenHire").onclick = () => setView("hire");
+$$(".mask").forEach(m=>m.addEventListener("click", e=>{ if(e.target===m) m.classList.remove("on"); }));
+
+async function renderDash(){
+  const d = await api("/api/dashboard?scope="+S.dashScope+"&pid="+S.pid);
+  S.dash = d;
+  const maxCost = Math.max(0.000001, ...d.by_emp.map(r=>r.cost||0));
+  const rank = d.by_emp.map(r=>`
+    <div class="rank"><span>${esc(r.name)}</span>
+      <span class="b" style="width:${Math.max(2,(r.cost||0)/maxCost*100).toFixed(1)}%"></span>
+      <span class="v">${money(r.cost)} 元</span></div>`).join("")
+    || '<div class="hint" style="margin:0">还没有产出记录</div>';
+  const proj = d.by_project.map(p=>`<tr><td>${esc(p.name)}</td>
+      <td class="num">${p.tasks}</td><td class="num">${money(p.cost)}</td></tr>`).join("")
+    || '<tr><td colspan="3" style="color:#94a3b8">还没有项目</td></tr>';
+  const st = d.by_status.map(x=>`<span class="badge ${x.status}" style="margin-right:6px">
+      ${STATUS[x.status]||x.status} ${x.n}</span>`).join("");
+  const recent = d.recent.map(t=>`<tr><td>${esc(t.title)}</td>
+      <td>${esc(t.pname||"—")}</td>
+      <td><span class="badge ${t.status}">${STATUS[t.status]||t.status}</span></td>
+      <td class="num">${money(t.total_cost)}</td></tr>`).join("")
+    || '<tr><td colspan="4" style="color:#94a3b8">还没有任务</td></tr>';
+  $("#dashBody").innerHTML = `
+    <div class="card" style="display:flex;align-items:center;gap:10px">
+      <b style="font-size:14px">统计范围</b>
+      <button class="btn sm ${S.dashScope==="project"?"primary":""}" data-scope="project">当前项目</button>
+      <button class="btn sm ${S.dashScope==="all"?"primary":""}" data-scope="all">全部项目</button>
+      <span class="spacer"></span>
+      <span class="hint" style="margin:0">聊天共 ${d.chat_n} 句 · ${money(d.chat_cost)} 元</span>
+    </div>
+    <div class="kpi4">
+      <div class="kpi"><b>${money(d.tot_cost)}</b><span>累计花费（元）</span></div>
+      <div class="kpi"><b>${num(d.tot_tok)}</b><span>累计 token</span></div>
+      <div class="kpi"><b>${d.tot_n}</b><span>产出条数</span></div>
+      <div class="kpi"><b>${d.by_emp.length}</b><span>参与过的员工</span></div>
+    </div>
+    <div class="card">
+      <div class="subhead" style="margin-top:0">谁最烧钱</div>
+      <div class="ranks">${rank}</div>
+    </div>
+    <div class="card">
+      <div class="subhead" style="margin-top:0">按项目</div>
+      <table><thead><tr><th>项目</th><th class="num">任务</th><th class="num">花费</th></tr></thead>
+        <tbody>${proj}</tbody></table>
+    </div>
+    <div class="card">
+      <div class="subhead" style="margin-top:0">任务状态</div>
+      <div>${st || '<span class="hint">还没有任务</span>'}</div>
+    </div>
+    <div class="card">
+      <div class="subhead" style="margin-top:0">最近任务</div>
+      <table><thead><tr><th>任务</th><th>项目</th><th>状态</th><th class="num">花费</th></tr></thead>
+        <tbody>${recent}</tbody></table>
+    </div>`;
+}
+
+function renderChatList(){
+  const box=$("#chatList");
+  if(!S.employees.length){ box.innerHTML='<div class="empty" style="padding:18px">先招人</div>'; return; }
+  box.innerHTML = S.employees.map(e=>`
+    <div class="chatitem ${S.chatEmp===e.id?"on":""}" data-chatpick="${e.id}">
+      <div class="avatar" style="width:28px;height:28px;font-size:14px;border-radius:9px">${esc(em2(e.emoji)||"🧑")}</div>
+      <div class="n"><b>${esc(e.title)}</b><br><span style="color:#94a3b8;font-size:11.5px">${esc(e.name)}</span></div>
+    </div>`).join("");
+  if(S.chatEmp) openChat(S.chatEmp);
+  else $("#chatPane").innerHTML = '<div class="card emptychat">左边挑一个员工，直接跟他说话——不走流水线，就像发微信。</div>';
+}
+
+async function openChat(eid){
+  S.chatEmp = eid;
+  $$(".chatitem").forEach(x=>x.classList.toggle("on", Number(x.dataset.chatpick)===eid));
+  const d = await api("/api/chat/"+eid);
+  S.chatMsgs = d.messages||[];
+  const e = S.employees.find(x=>x.id===eid)||{};
+  const bubbles = S.chatMsgs.map(m=>`
+    <div class="bubble ${m.role==="boss"?"me":""}">
+      <div class="avatar" style="width:30px;height:30px;font-size:15px;border-radius:9px">
+        ${m.role==="boss"?"👤":esc(em2(e.emoji)||"🧑")}</div>
+      <div class="body">${esc(m.content)}
+        ${m.role==="emp"&&(m.tokens_in||m.tokens_out)?`<div class="cost">${num(m.tokens_in)} 入 / ${num(m.tokens_out)} 出 · ${money(m.cost)} 元 · ${m.ms}ms</div>`:""}
+      </div></div>`).join("");
+  $("#chatPane").innerHTML = `
+    <div class="card">
+      <div class="streamhead">
+        <div class="avatar" style="width:34px;height:34px">${esc(em2(e.emoji)||"🧑")}</div>
+        <div><h3 style="margin:0">${esc(e.title)}　<span style="font-weight:400;color:#94a3b8;font-size:12px">${esc(e.name)}</span></h3>
+          <div style="font-size:11.5px;color:var(--sub)">${esc(e.duty||"")}</div></div>
+        <span class="spacer"></span>
+        <span class="badge">${esc(e.model||"deepseek-chat")}</span>
+      </div>
+      <div class="stream" id="chatStream" style="max-height:calc(100vh - 330px)">
+        ${bubbles || '<div class="emptychat">还没聊过。说点什么，他会以这个岗位的身份回你。</div>'}
+      </div>
+      <div class="chatbox">
+        <textarea id="chatInput" placeholder="跟他说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <button class="btn primary" id="btnSendChat">发送</button>
+      </div>
+    </div>`;
+  const st=$("#chatStream"); if(st) st.scrollTop = st.scrollHeight;
+  const ta=$("#chatInput");
+  ta.focus();
+  ta.addEventListener("keydown", ev=>{
+    if(ev.key==="Enter" && !ev.shiftKey){ ev.preventDefault(); sendChat(); }
+  });
+  $("#btnSendChat").onclick = sendChat;
+}
+
+async function sendChat(){
+  const ta=$("#chatInput"); if(!ta || S.chatting) return;
+  const text = ta.value.trim(); if(!text) return;
+  const eid = S.chatEmp;
+  S.chatting = true; ta.value="";
+  const st=$("#chatStream");
+  const ph = st.querySelector(".emptychat"); if(ph) ph.remove();
+  st.insertAdjacentHTML("beforeend",
+    `<div class="bubble me"><div class="avatar" style="width:30px;height:30px;font-size:15px;border-radius:9px">👤</div>
+      <div class="body">${esc(text)}</div></div>`);
+  st.insertAdjacentHTML("beforeend",
+    `<div class="bubble" id="typing"><div class="avatar" style="width:30px;height:30px">…</div>
+      <div class="body" style="color:#94a3b8">正在想…</div></div>`);
+  st.scrollTop = st.scrollHeight;
+  try{
+    const r = await postJSON("/api/chat/"+eid, {text});
+    const m = r.message;
+    const t=$("#typing"); if(t) t.remove();
+    const e = S.employees.find(x=>x.id===eid)||{};
+    st.insertAdjacentHTML("beforeend", `
+      <div class="bubble"><div class="avatar" style="width:30px;height:30px;font-size:15px;border-radius:9px">
+        ${esc(em2(e.emoji)||"🧑")}</div>
+        <div class="body">${esc(m.content)}
+          <div class="cost">${num(m.tokens_in)} 入 / ${num(m.tokens_out)} 出 · ${money(m.cost)} 元 · ${m.ms}ms</div>
+        </div></div>`);
+    st.scrollTop = st.scrollHeight;
+    refreshStats();
+  }catch(err){
+    const t=$("#typing"); if(t) t.remove();
+    toast(err.message);
+  }
+  S.chatting = false;
+}
+
+
+
+async function loadMem(eid){
+  const box = $("#e-membox"); if(!box) return;
+  if(!eid){ box.style.display="none"; S.memRows=[]; return; }
+  box.style.display="";
+  const d = await api("/api/memory/"+eid);
+  S.memRows = d.memory||[];
+  renderMem();
+}
+
+function renderMem(){
+  const list = $("#e-memlist"); if(!list) return;
+  list.innerHTML = S.memRows.length ? S.memRows.map(m=>`
+    <div class="memrow"><span>${esc(m.content)}</span>
+      <button data-memdel="${m.id}">✕</button></div>`).join("")
+    : '<div style="color:#94a3b8;font-size:12px">还没记过东西</div>';
+  $$("[data-memdel]", list).forEach(b=>{
+    b.onclick = async () => {
+      const eid = Number(S.editId||0);
+      if(!eid) return;
+      const d = await postJSON("/api/memory/"+eid, {del_id:Number(b.dataset.memdel)});
+      S.memRows = d.memory||[]; renderMem(); toast("忘了这条");
+    };
+  });
+}
+
+async function addMem(){
+  const eid = Number(S.editId||0);
+  const inp = $("#e-memnew");
+  const txt = inp.value.trim();
+  if(!eid){ toast("先保存这个员工，再记东西"); return; }
+  if(!txt) return;
+  const d = await postJSON("/api/memory/"+eid, {text:txt});
+  S.memRows = d.memory||[]; inp.value=""; renderMem(); toast("记下了，下次它会带着");
+}
+
+async function loadPipes(){
+  const d = await api("/api/pipelines?pid="+S.pid);
+  S.pipes = d.pipelines||[];
+  const sel = $("#t-pipe"); if(!sel) return;
+  sel.innerHTML = '<option value="">不用模板，手动挑人</option>' +
+    S.pipes.map(p=>`<option value="${p.id}">${esc(p.name)}（${p.emp_ids.length} 人）</option>`).join("");
+}
+
+function applyPipe(id){
+  const p = S.pipes.find(x=>String(x.id)===String(id));
+  if(!p) return;
+  S.picked = p.emp_ids.filter(eid => S.employees.some(e=>e.id===eid));
+  S.appr = new Set(S.picked.length?[S.picked.length-1]:[]);
+  renderPick();
+  toast("按模板排好了，可再手动调");
+}
+
+function bindExport(){
+  const tid = S.cur; if(!tid) return;
+  const d = $("#btnExportDocx"), m = $("#btnExportMd");
+  if(d) d.onclick = () => window.open("/api/tasks/"+tid+"/export?fmt=docx", "_blank");
+  if(m) m.onclick = () => window.open("/api/tasks/"+tid+"/export?fmt=md", "_blank");
+}
+
+load();
+</script>
+</body>
+</html>
