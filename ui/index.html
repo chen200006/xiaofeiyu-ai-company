@@ -526,8 +526,19 @@ const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&
 const STATUS = {pending:"待派",running:"干活中",waiting:"等你批",done:"已完成",
                 failed:"失败",rejected:"被退回",over_budget:"超预算"};
 
-async function api(path, opt){
-  const r = await fetch(path, opt);
+async function api(path, opt, timeoutMs){
+  const ms = timeoutMs || (path.indexOf("/agency/") >= 0 || path.indexOf("/gen_employee") >= 0
+    || path.indexOf("/chat") >= 0 ? 240000 : 20000);
+  const ctl = new AbortController();
+  const timer = setTimeout(()=>ctl.abort(), ms);
+  let r;
+  try {
+    r = await fetch(path, Object.assign({}, opt, {signal: ctl.signal}));
+  } catch (e) {
+    if (e && e.name === "AbortError")
+      throw new Error("等了 " + Math.round(ms/1000) + " 秒还没回应——后台服务可能没在跑，重开一下小肥鱼AI公司");
+    throw new Error("连不上后台服务（它可能刚被关了）。重开一下小肥鱼AI公司再试");
+  } finally { clearTimeout(timer); }
   const j = await r.json().catch(()=>({}));
   if(!r.ok) throw new Error(j.error || ("HTTP "+r.status));
   return j;
@@ -1076,7 +1087,12 @@ $("#btnAgGo").onclick = async () => {
   const t = $("#ag-text").value.trim();
   if (!t) { toast("先用一句话说你要什么"); return; }
   AG.text = t; AG.picks = {}; AG.extra = null; AG.draft = null;
-  $("#btnAgGo").disabled = true; $("#ag-tip").textContent = "先判断题型…";
+  $("#btnAgGo").disabled = true;
+  const t0 = Date.now();
+  $("#ag-tip").textContent = "先判断题型…";
+  const tick = setInterval(()=>{
+    $("#ag-tip").textContent = "深度思考中… " + Math.round((Date.now()-t0)/1000) + "s（想一想再动，别急）";
+  }, 1000);
   try {
     const r = await postJSON("/api/agency/understand", { text: t });
     AG.report = r.report;
@@ -1096,8 +1112,8 @@ $("#btnAgGo").onclick = async () => {
     });
   } catch (e) {
     toast(e.message || "理解失败");
-    $("#ag-tip").textContent = "";
-  } finally { $("#btnAgGo").disabled = false; }
+    $("#ag-tip").innerHTML = '<span style="color:#b91c1c">' + (e.message || "理解失败") + '</span>';
+  } finally { clearInterval(tick); $("#btnAgGo").disabled = false; }
 };
 
 $("#btnAgAsk").onclick = async () => {
