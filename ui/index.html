@@ -517,8 +517,25 @@ const S = { pid:0, projects:[], employees:[], tasks:[], stats:[], presets:[],
             es:null, fam:"全部", emoji:"🧑", tab:"mine", dashScope:"project",
             dash:null, chatEmp:null, chatMsgs:[], chatting:false, pipes:[], memRows:[] };
 
-const toast = t => { const el=$("#toast"); el.textContent=t; el.classList.add("on");
-  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("on"),1900); };
+const ERR_ZH = [
+  [/Failed to fetch/i, "连不上后台服务——小肥鱼AI公司没在运行，或刚被关掉了"],
+  [/NetworkError|Load failed|net::ERR_/i, "连不上后台服务——检查一下窗口是不是被关掉了"],
+  [/ERR_CONNECTION_REFUSED/i, "后台服务没在跑，重开一下小肥鱼AI公司"],
+  [/abort|timed out|timeout/i, "等太久了，后台没回应——重开一下小肥鱼AI公司再试"],
+  [/fetch failed/i, "连不上后台服务"],
+];
+const zhErr = m => {
+  const t = String(m == null ? "" : m).trim();
+  if (!t) return "出错了，再试一次";
+  for (const [re, out] of ERR_ZH) if (re.test(t)) return out;
+  return t;
+};
+const toast = t => { const el=$("#toast"); el.textContent=zhErr(t); el.classList.add("on");
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("on"),2400); };
+window.addEventListener("unhandledrejection", ev => {
+  const m = ev && ev.reason && (ev.reason.message || ev.reason);
+  toast(m || "出错了");
+});
 const money = n => (Number(n)||0).toFixed(3);
 const num = n => (Number(n)||0).toLocaleString("en-US");
 const em2 = x => String(x == null ? "" : x).replace(/\uFE0F/g, "");
@@ -537,7 +554,7 @@ async function api(path, opt, timeoutMs){
   } catch (e) {
     if (e && e.name === "AbortError")
       throw new Error("等了 " + Math.round(ms/1000) + " 秒还没回应——后台服务可能没在跑，重开一下小肥鱼AI公司");
-    throw new Error("连不上后台服务（它可能刚被关了）。重开一下小肥鱼AI公司再试");
+    throw new Error(zhErr(e && e.message) || "连不上后台服务（它可能刚被关了）。重开一下小肥鱼AI公司再试");
   } finally { clearTimeout(timer); }
   const j = await r.json().catch(()=>({}));
   if(!r.ok) throw new Error(j.error || ("HTTP "+r.status));
