@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sqlite3
 import threading
 import time
@@ -26,6 +27,7 @@ else:
     BASE = os.path.dirname(os.path.abspath(__file__))
     RES = BASE
 
+APP_VERSION = "6.1.0"
 DB_PATH = os.path.join(BASE, "company.db")
 UI_PATH = os.path.join(RES, "ui", "index.html")
 IMAGE_DIR = os.path.join(BASE, "images")
@@ -79,6 +81,138 @@ def db():
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     return c
+
+
+
+def _log(msg):
+    try:
+        line = "[%s] %s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msg)
+        with open(os.path.join(BASE, "error.log"), "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception:
+        pass
+
+
+BACKUP_DIR = os.path.join(BASE, "backups")
+BACKUP_KEEP = 12
+BACKUP_EVERY_SEC = 6 * 3600
+
+
+def _ensure_backup_dir():
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+    except Exception:
+        pass
+
+
+def backup_db(tag="auto"):
+    """用 sqlite 自己的 backup API 复制，WAL 下也安全。返回文件名或空串。"""
+    if not os.path.exists(DB_PATH):
+        return ""
+    _ensure_backup_dir()
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    name = "company-%s-%s.db" % (stamp, tag)
+    try:
+        src = sqlite3.connect(DB_PATH, timeout=10)
+        dst = sqlite3.connect(os.path.join(BACKUP_DIR, name))
+        src.backup(dst)
+        dst.close()
+        src.close()
+    except Exception as e:
+        _log("backup failed: %r" % (e,))
+        return ""
+    prune_backups()
+    return name
+
+
+def list_backups():
+    _ensure_backup_dir()
+    out = []
+    for fn in os.listdir(BACKUP_DIR):
+        if not fn.endswith(".db"):
+            continue
+        try:
+            st = os.stat(os.path.join(BACKUP_DIR, fn))
+        except Exception:
+            continue
+        out.append({"name": fn, "size": st.st_size, "mtime": st.st_mtime})
+    out.sort(key=lambda x: x["mtime"], reverse=True)
+    return out
+
+
+def prune_backups():
+    for it in list_backups()[BACKUP_KEEP:]:
+        try:
+            os.remove(os.path.join(BACKUP_DIR, it["name"]))
+        except Exception:
+            pass
+
+
+def last_backup_age():
+    items = list_backups()
+    return (time.time() - items[0]["mtime"]) if items else None
+
+
+def db_integrity():
+    if not os.path.exists(DB_PATH):
+        return True, "还没有数据库（首次启动）"
+    try:
+        c = sqlite3.connect(DB_PATH, timeout=10)
+        rows = c.execute("PRAGMA quick_check").fetchall()
+        c.close()
+        msgs = [r[0] for r in rows]
+        ok = bool(msgs) and msgs[0] == "ok"
+        return ok, ("ok" if ok else "；".join(msgs)[:300])
+    except Exception as e:
+        return False, repr(e)
+
+
+def recover_interrupted():
+    c = db()
+    n = 0
+    try:
+        rows = c.execute("SELECT id FROM tasks WHERE status IN ('running','waiting')").fetchall()
+        for r in rows:
+            c.execute("UPDATE tasks SET status='interrupted' WHERE id=?", (r["id"],))
+            c.commit()
+            log_msg(
+                r["id"], None, "系统", "系统", "note",
+                "上次跑到一半被关掉了（进程中断）。这一单可以点「再跑一遍」重新来，已经花掉的钱不会退。")
+            n += 1
+        c.commit()
+        try:
+            APPROVALS.clear()
+        except Exception:
+            pass
+    finally:
+        c.close()
+    return n
+
+
+def startup_guard():
+    ok, detail = db_integrity()
+    restored = ""
+    if not ok:
+        items = list_backups()
+        if items:
+            try:
+                broken = "company-broken-%s.db" % datetime.now().strftime("%Y%m%d-%H%M%S")
+                shutil.copy2(DB_PATH, os.path.join(BACKUP_DIR, broken))
+                shutil.copy2(os.path.join(BACKUP_DIR, items[0]["name"]), DB_PATH)
+                restored = items[0]["name"]
+                _log("db broken (%s) -> restored %s" % (detail, restored))
+                ok, detail = db_integrity()
+            except Exception as e:
+                _log("auto restore failed: %r" % (e,))
+        else:
+            _log("db broken and no backup: %s" % detail)
+    made = ""
+    age = last_backup_age()
+    if age is None or age > BACKUP_EVERY_SEC:
+        made = backup_db("auto")
+    n = recover_interrupted()
+    return {"db_ok": ok, "detail": detail, "restored": restored,
+            "backup": made, "interrupted": n}
 
 
 def now():
@@ -335,6 +469,10 @@ def init_db():
     c.commit()
     normalize_emoji(c)
     c.close()
+    try:
+        startup_guard()
+    except Exception as _e:
+        _log("startup_guard failed: %r" % (_e,))
     try:
         kb_backfill()
     except Exception as _e:  # noqa: BLE001
@@ -1011,7 +1149,8 @@ class H(BaseHTTPRequestHandler):
             c.close()
             return self.send(200, {"deep": DEEP_THINK, "model": MODEL_DEEP if DEEP_THINK else MODEL_CHAT,
                                    "projects": projects, "pid": pid, "employees": emps,
-                                   "tasks": tasks, "stats": stats, "has_key": bool(API_KEY)})
+                                   "tasks": tasks, "stats": stats, "has_key": bool(API_KEY),
+                                   "version": APP_VERSION})
 
         if path == "/api/kb":
             pid = int(qs.get("pid", ["0"])[0] or 0)
@@ -1045,6 +1184,20 @@ class H(BaseHTTPRequestHandler):
             if not r:
                 return self.send(404, {"error": "没有这条知识"})
             return self.send(200, {"item": dict(r)})
+
+        if path == "/api/backups":
+            ok, detail = db_integrity()
+            items = list_backups()
+            self.send(200, {
+                "ok": True,
+                "version": APP_VERSION,
+                "db_ok": ok,
+                "db_detail": detail,
+                "db_size": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
+                "backups": items,
+                "last_age": last_backup_age(),
+            })
+            return
 
         if path == "/api/presets":
             pid = int(qs.get("pid", [0])[0] or 0)
@@ -1239,6 +1392,39 @@ class H(BaseHTTPRequestHandler):
                     v["event"].set()
                     acted = "reject"
             return self.send(200, {"ok": True, "acted": acted})
+
+        if path == "/api/backups":
+            name = backup_db("manual")
+            if not name:
+                self.send(500, {"ok": False, "error": "备份失败，看看 error.log"})
+                return
+            self.send(200, {"ok": True, "name": name, "backups": list_backups()})
+            return
+
+        if path == "/api/backups/restore":
+            want = (b.get("name") or "").strip()
+            if want not in [it["name"] for it in list_backups()]:
+                self.send(400, {"ok": False, "error": "找不到这个备份"})
+                return
+            safety = backup_db("before-restore")
+            try:
+                APPROVALS.clear()
+            except Exception:
+                pass
+            try:
+                shutil.copy2(os.path.join(BACKUP_DIR, want), DB_PATH)
+                for ext in ("-wal", "-shm"):
+                    try:
+                        os.remove(DB_PATH + ext)
+                    except Exception:
+                        pass
+            except Exception as e:
+                self.send(500, {"ok": False, "error": "恢复失败：%r" % (e,)})
+                return
+            ok, detail = db_integrity()
+            self.send(200, {"ok": True, "restored": want, "safety": safety,
+                            "db_ok": ok, "detail": detail})
+            return
 
         if path == "/api/kb":
             c = db()

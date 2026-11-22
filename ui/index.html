@@ -129,6 +129,7 @@
   .badge.running{background:#e9f0ff;color:#3355cc}
   .badge.waiting{background:#fff4e2;color:#b45309}
   .badge.failed,.badge.rejected,.badge.over_budget{background:#fdeaea;color:#b91c1c}
+  .badge.interrupted{background:#f3e8ff;color:#6b21a8}
 
   .detailwrap{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
   @media(max-width:1250px){
@@ -222,6 +223,13 @@
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .subhead{font-size:11.5px;color:var(--sub);letter-spacing:1px;margin:14px 0 6px;font-weight:600}
 
+  .kvbox{display:grid;gap:5px;background:#f7f9fd;border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;font-size:13px}
+  .kv{display:flex;justify-content:space-between;gap:10px}
+  .bakrow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:9px 12px;border:1px solid var(--line);border-radius:10px;
+    margin-bottom:8px;background:#fff}
+  .bakrow b{font-size:13px}
   .mask{position:fixed;inset:0;background:rgba(9,14,23,.42);backdrop-filter:blur(2px);
     display:none;align-items:center;justify-content:center;padding:20px;z-index:60}
   .mask.on{display:flex}
@@ -318,6 +326,7 @@
     <div class="railfoot">
       <div class="line"><span>模型</span><b id="modelName">deepseek-chat</b></div>
       <div class="line"><span>今日花费</span><b id="todayCost">0.000 元</b></div>
+      <div class="line"><span>版本</span><b id="verName">-</b></div>
     </div>
   </aside>
 
@@ -332,6 +341,7 @@
       <span class="chip" id="projKind">—</span>
       <span class="spacer"></span>
       <button class="btn" id="btnNewTask">＋ 派一个活</button>
+      <button class="btn sm ghost" id="btnBak" title="备份与恢复">💾 备份</button>
       <button class="btn sm ghost" id="btnKey" title="填 / 换 DeepSeek 的 API Key">🔑 Key</button>
         <button class="btn primary" id="btnOpenHire">招募员工</button>
     </div>
@@ -543,6 +553,21 @@
   </div>
 </div>
 
+<div class="mask" id="maskBak">
+  <div class="sheet" style="width:min(620px,100%)">
+    <h3>备份与恢复</h3>
+    <p class="lead">公司全在 <code>company.db</code> 这一个文件里。每天自动备一次，也能手动备、一键回滚。</p>
+    <div id="bak-now" class="kvbox"></div>
+    <div style="display:flex;gap:8px;margin:12px 0 6px">
+      <button class="btn primary" id="btnBakMake">立即备份</button>
+    </div>
+    <div class="hint" style="margin:6px 0 10px">恢复会先把当前库再备一份（before-restore），不会丢得一干二净。</div>
+    <div id="bak-list"></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px">
+      <button class="btn" data-close="maskBak">关闭</button>
+    </div>
+  </div>
+</div>
 <div class="mask" id="maskKey">
   <div class="sheet" style="width:min(540px,100%)">
     <h3 style="margin:0 0 6px">填 DeepSeek 的 API Key</h3>
@@ -650,7 +675,7 @@ const money = n => (Number(n)||0).toFixed(3);
 const num = n => (Number(n)||0).toLocaleString("en-US");
 const em2 = x => String(x == null ? "" : x).replace(/\uFE0F/g, "");
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const STATUS = {pending:"待派",running:"干活中",waiting:"等你批",done:"已完成",
+const STATUS = {pending:"待派",running:"干活中",waiting:"等你批",interrupted:"已中断",done:"已完成",
                 failed:"失败",rejected:"被退回",over_budget:"超预算"};
 
 async function api(path, opt, timeoutMs){
@@ -679,12 +704,14 @@ async function load(pid){
   S.projects=st.projects; S.pid=st.pid; S.employees=st.employees; S.tasks=st.tasks;
   S.stats=st.stats||[];
   S.has_key = !!st.has_key;
+  S.version = st.version || S.version || "";
   S.deep = !!st.deep; S.modelName = st.model || "deepseek-chat";
   const mn = $("#modelName");
   if (mn) { mn.textContent = S.deep ? "deepseek-reasoner" : S.modelName; mn.title = S.deep ? "所有调用强制深度思考" : ""; }
   renderProj(); renderTeam(); renderTasks();
   renderKeyBar();
   $("#todayCost").textContent = money(S.stats.reduce((a,r)=>a+(r.cost||0),0)) + " 元";
+  if (S.version) $("#verName").textContent = "v" + S.version;
   const pj = S.projects.find(p=>p.id===S.pid);
   $("#projKind").textContent = pj ? pj.kind : "—";
   if(S.view==="hire") renderHire();
@@ -1048,6 +1075,50 @@ const _oldHow = () => {
   ];
   alert(lines.join("\n"));
 };
+
+
+function fmtSize(n) {
+  if (n > 1048576) return (n / 1048576).toFixed(1) + " MB";
+  return Math.max(1, Math.round(n / 1024)) + " KB";
+}
+function fmtAge(sec) {
+  if (sec == null) return "还没有备份";
+  if (sec < 90) return "刚刚";
+  if (sec < 3600) return Math.round(sec / 60) + " 分钟前";
+  if (sec < 86400) return Math.round(sec / 3600) + " 小时前";
+  return Math.round(sec / 86400) + " 天前";
+}
+async function openBak() {
+  let d;
+  try { d = await api("/api/backups"); } catch (e) { toast(zhErr(e)); return; }
+  $("#maskBak").classList.add("on");
+  const ok = d.db_ok;
+  $("#bak-now").innerHTML =
+    `<div class="kv"><span>数据库</span><b>${ok ? "✅ 完好" : "⚠️ 有问题"}</b></div>` +
+    `<div class="kv"><span>大小</span><b>${fmtSize(d.db_size || 0)}</b></div>` +
+    `<div class="kv"><span>最近备份</span><b>${fmtAge(d.last_age)}</b></div>` +
+    (ok ? "" : `<div class="kv"><span>检查结果</span><b style="color:#b42318">${esc(d.db_detail || "")}</b></div>`);
+  const rows = (d.backups || []).map(b => {
+    const t = new Date(b.mtime * 1000);
+    const label = t.toLocaleString("zh-CN", { hour12: false });
+    return `<div class="bakrow">
+      <div><b>${esc(label)}</b><span class="hint" style="margin-left:8px">${fmtSize(b.size)}</span></div>
+      <button class="btn ghost sm" data-restore="${esc(b.name)}">回滚</button>
+    </div>`;
+  }).join("");
+  $("#bak-list").innerHTML = rows || `<div class="hint">还没有备份</div>`;
+  $("#bak-list").querySelectorAll("[data-restore]").forEach(btn => {
+    btn.onclick = async () => {
+      const name = btn.dataset.restore;
+      if (!confirm("确定回滚到这份备份吗？当前库会先被备份一份。")) return;
+      try {
+        const r = await postJSON("/api/backups/restore", { name });
+        toast(r.db_ok ? "已回滚，正在刷新…" : "已回滚，但库检查报警");
+        setTimeout(() => location.reload(), 900);
+      } catch (e) { toast(zhErr(e)); }
+    };
+  });
+}
 
 function setView(v){
   S.view=v;
@@ -1526,6 +1597,14 @@ $("#btnKbSave").onclick = async () => {
   } catch (e) { toast(e.message); }
 };
 
+  $("#btnBak").onclick = () => openBak();
+  $("#btnBakMake").onclick = async () => {
+    const b = $("#btnBakMake");
+    b.disabled = true;
+    try { await postJSON("/api/backups", {}); toast("备份好了"); await openBak(); }
+    catch (e) { toast(zhErr(e)); }
+    b.disabled = false;
+  };
 $("#btnKey").onclick = async () => {
   try {
     const r = await api("/api/key");
