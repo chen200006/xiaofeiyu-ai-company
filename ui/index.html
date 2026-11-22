@@ -138,6 +138,55 @@
 
   .streamhead{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
   .streamhead h3{margin:0;font-size:15px}
+  #taskList .taskitem{display:flex;gap:10px;align-items:center;padding:10px}
+  #taskList .taskitem .av{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+    font-size:17px;background:linear-gradient(150deg,#eef3ff,#e4ecff);border:1px solid #dfe7fa}
+  #taskList .taskitem .tx{flex:1;min-width:0}
+  #taskList .taskitem .tx b{display:block;font-size:13px;font-weight:600;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  #taskList .taskitem .tm{text-align:right;line-height:1.5;color:#94a3b8}
+  #taskList .taskitem .tx span{font-size:11.5px;color:#94a3b8;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;display:block}
+  #taskList .taskitem .tm{font-size:11px;color:#94a3b8;flex:0 0 auto}
+
+  .stream.chat{max-height:calc(100vh - 330px);padding:6px 4px 2px}
+  .cm{display:flex;gap:10px;margin-bottom:14px;align-items:flex-start}
+  .cm.me{flex-direction:row-reverse}
+  .cm .av{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;font-size:18px;
+    background:linear-gradient(150deg,#eef3ff,#e4ecff);border:1px solid #dfe7fa;flex:0 0 auto}
+  .cm.me .av{background:linear-gradient(150deg,#0f172a,#1f2a44);color:#fff}
+  .cm .body{max-width:min(720px,calc(100% - 60px))}
+  .cm .nm{font-size:11.5px;color:#94a3b8;margin-bottom:4px;display:flex;gap:8px;align-items:center}
+  .cm.me .nm{justify-content:flex-end}
+  .cm .nm b{color:#334155;font-size:12px;font-weight:700}
+  .cm .bub{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 13px;
+    font-size:13.5px;line-height:1.85;white-space:pre-wrap;word-break:break-word;
+    box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .cm.me .bub{background:#dbeafe;border-color:#c7ddff}
+  .cm.sys .bub{background:#f8fafc;border-style:dashed;color:#475569;font-size:12.5px}
+  .cm .foot{font-size:10.5px;color:#94a3b8;margin-top:4px;display:flex;gap:8px;align-items:center}
+  .cm.me .foot{justify-content:flex-end}
+  .think{margin:6px 0 0;border-left:2px solid #ddd6fe;background:#faf7ff;border-radius:8px;
+    padding:6px 10px;font-size:12px;color:#6b5b95;line-height:1.7;white-space:pre-wrap}
+  .think summary{cursor:pointer;color:#7c3aed;font-size:11.5px;font-weight:600;outline:none}
+  .approval{border:1px solid #fde68a;background:#fffbeb;border-radius:12px;padding:10px 13px}
+  .approval .t{font-size:12.5px;color:#92400e;font-weight:700;margin-bottom:4px}
+  .approval .x{font-size:13px;white-space:pre-wrap;line-height:1.8;color:#451a03}
+  .filecard{border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:10px 13px;
+    display:flex;align-items:center;gap:10px}
+  .filecard .ic{width:34px;height:34px;border-radius:9px;background:#e0ecff;display:grid;
+    place-items:center;font-size:17px}
+  .filecard .ft{flex:1;min-width:0}
+  .filecard .ft b{font-size:13px;display:block}
+  .filecard .ft span{font-size:11.5px;color:#64748b}
+  .cmbar{display:flex;gap:8px;align-items:flex-end;margin-top:10px;padding-top:10px;
+    border-top:1px solid var(--line)}
+  .cmbar textarea{flex:1;min-height:44px;max-height:120px;resize:vertical;padding:9px 12px;
+    border:1px solid #dbe3f0;border-radius:12px;font-size:13px;line-height:1.6;font-family:inherit}
+  .members{display:flex;gap:4px;align-items:center;margin-left:6px}
+  .members .av{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;font-size:13px;
+    background:#eef3ff;border:1px solid #dfe7fa}
+
   .stream{max-height:calc(100vh - 250px);overflow:auto;padding-right:6px}
   .msg{border:1px solid var(--line);border-radius:14px;padding:11px 14px;margin-bottom:10px;
     background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04)}
@@ -727,14 +776,18 @@ async function renderHire(){
 }
 
 function renderTasks(){
-  const box=$("#taskList");
+  const box=$("#taskList"); if(!box) return;
   if(!S.tasks.length){ box.innerHTML = '<div class="empty" style="padding:22px">还没有任务</div>'; return; }
-  box.innerHTML = S.tasks.map(t=>`
-    <div class="taskitem ${S.cur===t.id?"on":""}" data-task="${t.id}">
-      <div class="t">${esc(t.title)}</div>
-      <div class="m"><span class="badge ${t.status}">${STATUS[t.status]||t.status}</span>
-        <span>${money(t.total_cost)} 元</span></div>
-    </div>`).join("");
+  box.innerHTML = S.tasks.map(t=>{
+    const last = t.last_msg || "";
+    const st = STATUS[t.status]||t.status;
+    return `<div class="taskitem ${S.cur===t.id?"on":""}" data-task="${t.id}">
+      <div class="av">${esc(t.grp_emoji || "💬")}</div>
+      <div class="tx"><b>${esc(t.title)}</b>
+        <span>${esc(last || st)}</span></div>
+      <div class="tm">${st}<br>${money(t.total_cost)}</div>
+    </div>`;
+  }).join("");
 }
 
 async function selectTask(id){
@@ -746,23 +799,112 @@ async function selectTask(id){
   S.es.onmessage = ev => { try{ onEvent(JSON.parse(ev.data)); }catch(e){} };
 }
 
+function avOf(name){
+  if(!name) return "🧑";
+  if(name==="老板") return "👑";
+  if(name==="系统") return "⚙️";
+  if(name==="指挥中心") return "🧭";
+  if(name==="HR") return "👔";
+  const e=(S.employees||[]).find(x=>x.title===name);
+  return (e && e.emoji) || "🧑";
+}
+
+function thinkHTML(m){
+  if(!m.reason || !m.reason.trim()) return "";
+  return `<details class="think"><summary>🧠 思考过程（${num((m.reason||"").length)} 字）</summary>${
+    esc(m.reason.slice(0, 4000))}</details>`;
+}
+
+function fileHTML(m){
+  const t=S.detail && S.detail.task;
+  return `<div class="filecard">
+    <div class="ic">📄</div>
+    <div class="ft"><b>${esc((t&&t.title)||"成品")}</b>
+      <span>${num((m.content||"").length)} 字 · ${money(m.cost||0)} 元 · 可以直接拿走</span></div>
+    <button class="btn sm ghost" data-dl="docx">Word</button>
+    <button class="btn sm ghost" data-dl="md">MD</button>
+    <button class="btn sm" data-copy="${m.id}">复制</button>
+  </div>`;
+}
+
 function msgHTML(m){
-  const kname={instruction:"派活",reply:"产出",note:"系统",deliverable:"成品",image:"出图"}[m.kind]||m.kind;
+  const me = m.sender === "老板";
+  const sys = m.kind === "note" || m.kind === "instruction";
   const cost=(m.tokens_in||m.tokens_out)
     ? `<span>${num(m.tokens_in)} 入 / ${num(m.tokens_out)} 出</span>
-       <span style="color:#b45309">${money(m.cost)} 元</span><span style="opacity:.6">${m.ms||0}ms</span>`:"";
-  const copy=(m.kind==="reply"||m.kind==="deliverable")
-    ? `<button class="btn sm ghost" data-copy="${m.id}" style="padding:1px 6px">复制</button>`:"";
-  return `<div class="msg k-${m.kind}">
-    <div class="hd"><span class="who">${esc(m.sender)} → ${esc(m.receiver)}</span>
-      <span class="badge">${kname}</span>
-      ${m.model === "deepseek-reasoner"
-        ? '<span class="badge" style="background:#ede9fe;color:#6d28d9">🧠 深度思考</span>' : ""}
-      <span class="meta">${copy}${cost}</span></div>
-    <div class="bd">${m.kind==="image"
-      ? `<img class="genimg" src="/images/${encodeURIComponent(m.content)}"
-              alt="生成图" onclick="window.open(this.src,'_blank')">`
-      : esc(m.content)}</div></div>`;
+       <span style="color:#b45309">${money(m.cost)} 元</span><span>${m.ms||0}ms</span>`:"";
+  let body = "";
+  if(m.kind === "image"){
+    body = `<img class="genimg" src="/images/${encodeURIComponent(m.content)}"
+              alt="生成图" onclick="window.open(this.src,'_blank')">`;
+  }else if(m.kind === "approval"){
+    body = `<div class="approval">
+      <div class="t">@老板 需要你拍板</div>
+      <div class="x">${esc((m.content || "").replace(/^@老板\s*/, ""))}</div>
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button class="btn sm primary" data-ok="${m.step_id||""}">通过</button>
+        <button class="btn sm" data-no="${m.step_id||""}">驳回</button>
+        <span class="hint" style="margin:0">也可以直接在下面打字回「通过」或「驳回」</span>
+      </div></div>`;
+  }else if(m.kind === "deliverable"){
+    body = fileHTML(m) + `<div style="margin-top:8px;font-size:13.5px;line-height:1.85;white-space:pre-wrap">${
+      esc((m.content||"").slice(0, 1200))}${(m.content||"").length>1200?"\n……":""}</div>`;
+  }else{
+    body = esc(m.content||"");
+  }
+  return `<div class="cm ${me?"me":""} ${sys?"sys":""}">
+    <div class="av">${avOf(m.sender)}</div>
+    <div class="body">
+      <div class="nm"><b>${esc(m.sender)}</b>${m.kind==="instruction"?"派了活":""}
+        ${m.model==="deepseek-reasoner"?'<span class="badge" style="background:#ede9fe;color:#6d28d9">🧠</span>':""}</div>
+      <div class="bub">${body}</div>
+      ${thinkHTML(m)}
+      <div class="foot">${cost}</div>
+    </div>
+  </div>`;
+}
+
+function chatChrome(){
+  const d=S.detail, t=d.task;
+  const stream=$("#stream");
+  if(!stream) return;
+  stream.classList.add("chat");
+  // 成员头像条：塞进标题行末尾
+  const head=document.querySelector("#taskDetail .streamhead");
+  if(head && !head.querySelector(".members")){
+    const names=[...new Set((d.steps||[]).map(x=>x.emp_title).filter(Boolean))];
+    const mem=document.createElement("span");
+    mem.className="members";
+    mem.title="群成员：" + names.join("、");
+    mem.innerHTML=names.slice(0,6).map(n=>`<span class="av" title="${esc(n)}">${avOf(n)}</span>`).join("");
+    head.insertBefore(mem, head.querySelector(".spacer")||null);
+  }
+  // 底部输入条
+  if(!$("#cmbar")){
+    const bar=document.createElement("div");
+    bar.className="cmbar"; bar.id="cmbar";
+    bar.innerHTML=`<textarea id="cm-input" placeholder="在群里说句话… 需要你拍板时，直接回「通过」或「驳回」（Enter 发送，Shift+Enter 换行）"></textarea>
+      <button class="btn primary" id="cm-send">发送</button>`;
+    stream.parentElement.appendChild(bar);
+    const send=async()=>{
+      const ta=$("#cm-input"); const v=(ta.value||"").trim();
+      if(!v) return;
+      ta.value="";
+      try{
+        const r=await api("/api/tasks/"+S.cur+"/say",{method:"POST",body:JSON.stringify({text:v})});
+        if(r.acted==="approve") toast("已通过，继续往下做");
+        else if(r.acted==="reject") toast("已驳回，队伍停下了");
+      }catch(e){ toast(zhErr(e)); }
+    };
+    $("#cm-send").onclick=send;
+    $("#cm-input").addEventListener("keydown",ev=>{
+      if(ev.key==="Enter" && !ev.shiftKey){ ev.preventDefault(); send(); }
+    });
+  }
+  // 成品卡片的下载按钮
+  document.querySelectorAll("#stream [data-dl]").forEach(b=>{
+    b.onclick=()=>window.open("/api/tasks/"+S.cur+"/export?fmt="+b.dataset.dl, "_blank");
+  });
 }
 
 function renderDetail(){
@@ -809,6 +951,7 @@ function renderDetail(){
       </div>
     </div>`;
 
+  chatChrome();
   const dock = $("#dock"), pill = $("#dockPill");
   if (dock) {
     $("#dockBody").innerHTML = `

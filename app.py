@@ -315,6 +315,8 @@ def init_db():
         c.execute("ALTER TABLE presets ADD COLUMN src_emp INT")
     if "model" not in [r[1] for r in c.execute("PRAGMA table_info(messages)").fetchall()]:
         c.execute("ALTER TABLE messages ADD COLUMN model TEXT DEFAULT ''")
+    if "reason" not in [r[1] for r in c.execute("PRAGMA table_info(messages)").fetchall()]:
+        c.execute("ALTER TABLE messages ADD COLUMN reason TEXT DEFAULT ''")
     if "boundary" not in cols("employees"):
         c.execute("ALTER TABLE employees ADD COLUMN boundary TEXT DEFAULT ''")
     if "kind" not in cols("employees"):
@@ -489,13 +491,14 @@ def kb_context(project_id, text, k=3):
 
 
 def log_msg(task_id, step_id, sender, receiver, kind, content,
-            tin=0, tout=0, cost=0.0, ms=0):
+            tin=0, tout=0, cost=0.0, ms=0, reason=""):
     c = db()
     cur = c.execute(
         "INSERT INTO messages(task_id,step_id,sender,receiver,kind,content,"
-        "tokens_in,tokens_out,cost,ms,ts,model) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        "tokens_in,tokens_out,cost,ms,ts,model,reason)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (task_id, step_id, sender, receiver, kind, content, tin, tout, cost, ms, now(),
-         getattr(_TLS, "model", "")))
+         getattr(_TLS, "model", ""), reason or ""))
     mid = cur.lastrowid
     c.commit()
     c.close()
@@ -750,8 +753,10 @@ def run_task(task_id):
 
         if st["needs_approval"]:
             set_step(st["id"], status="waiting")
-            log_msg(task_id, st["id"], "系统", emp["title"], "note",
-                    "这一步要老板点「通过」才继续：%s" % emp["title"])
+            log_msg(task_id, st["id"], emp["title"], "老板", "approval",
+                    "@老板 这一步想请你拍板：%s\n要交的东西：%s\n"
+                    "回「通过」我就继续；回「驳回」我停下等你改要求。"
+                    % (emp["title"], (emp.get("output_spec") or "按岗位要求交")[:220]))
             ev = threading.Event()
             APPROVALS[(task_id, st["id"])] = {"event": ev, "ok": None}
             set_task(task_id, status="waiting")
@@ -812,7 +817,8 @@ def run_task(task_id):
         spent += cc
         if len(text) > best["n"]:
             best = {"text": text, "n": len(text)}
-        log_msg(task_id, st["id"], emp["title"], "老板", "reply", text, tin, tout, cc, ms)
+        log_msg(task_id, st["id"], emp["title"], "老板", "reply", text, tin, tout, cc, ms,
+                reason=getattr(_TLS, "reason", "") or "")
         set_step(st["id"], status="done", output=text, tokens_in=tin,
                  tokens_out=tout, cost=cc, finished_at=now())
         bump_task(task_id, cc, tin, tout)
@@ -852,7 +858,8 @@ def run_task(task_id):
                 c2 = cost_of(tin2, tout2)
                 spent += c2
                 log_msg(task_id, st["id"], emp["title"], "老板", "reply", text2,
-                        tin2, tout2, c2, ms2)
+                        tin2, tout2, c2, ms2,
+                        reason=getattr(_TLS, "reason", "") or "")
                 bump_task(task_id, c2, tin2, tout2)
                 if len(text2) > len(text):
                     text = text2
@@ -990,6 +997,12 @@ class H(BaseHTTPRequestHandler):
                 "SELECT * FROM employees WHERE project_id=? ORDER BY id", (pid,)).fetchall()]
             tasks = [dict(r) for r in c.execute(
                 "SELECT * FROM tasks WHERE project_id=? ORDER BY id DESC", (pid,)).fetchall()]
+            for _t in tasks:
+                last = c.execute(
+                    "SELECT content,kind FROM messages WHERE task_id=? ORDER BY id DESC LIMIT 1",
+                    (_t["id"],)).fetchone()
+                _t["last_msg"] = ((last["content"] or "").replace("\n", " ")[:38]) if last else ""
+                _t["grp_emoji"] = "💬"
             stats = [dict(r) for r in c.execute(
                 "SELECT m.sender,COUNT(*) n,SUM(m.tokens_in) tin,SUM(m.tokens_out) tout,"
                 "SUM(m.cost) cost FROM messages m JOIN tasks t ON t.id=m.task_id "
@@ -1088,6 +1101,7 @@ class H(BaseHTTPRequestHandler):
             emp = c.execute("SELECT * FROM employees WHERE id=?", (eid,)).fetchone()
             c.close()
             return self.send(200, {"messages": rows, "employee": dict(emp) if emp else None})
+
 
         if path.startswith("/api/tasks/") and path.endswith("/export"):
             tid = int(path.rstrip("/").split("/")[3])
@@ -1196,6 +1210,35 @@ class H(BaseHTTPRequestHandler):
         global API_KEY
         path = urlparse(self.path).path
         b = self.body()
+
+        if path.startswith("/api/tasks/") and path.endswith("/say"):
+            try:
+                tid = int(path.rstrip("/").split("/")[3])
+            except Exception:  # noqa: BLE001
+                return self.send(400, {"error": "任务号不对"})
+            text = (b.get("text") or "").strip()
+            if not text:
+                return self.send(400, {"error": "说点什么"})
+            log_msg(tid, None, "老板", "全体", "boss", text)
+            acted = "chat"
+            slot = None
+            for (tt, sid), v in list(APPROVALS.items()):
+                if tt == tid:
+                    slot = (sid, v)
+                    break
+            if slot:
+                sid, v = slot
+                yes = re.search(r"通过|可以|继续|批准|同意|行|ok|OK|好", text)
+                no = re.search(r"驳回|不行|重做|退回|停|不对|别", text)
+                if yes and not no:
+                    v["ok"] = True
+                    v["event"].set()
+                    acted = "approve"
+                elif no:
+                    v["ok"] = False
+                    v["event"].set()
+                    acted = "reject"
+            return self.send(200, {"ok": True, "acted": acted})
 
         if path == "/api/kb":
             c = db()
@@ -1626,6 +1669,9 @@ task.title ≤ 18 字；task.goal 写清交付物与判断标准；task.accept �
   image→画面构思/出图；plan→需求分析/结构化/审校；code→方案/实现/测试；data→检索/清洗/结论；
 - duty 只写流水线上的一环，并写明「不负责什么」；boundary 写最可能越界的 2—3 件事（分号隔开）；
 - 岗位之间不许职责重叠（不要同时排「审稿」和「校对」）；
+- **必须有一个「核对岗」**：职责只做一件事——对照 task.accept 逐条检查交付物有没有偏离需求，
+  输出「符合/不符合 + 缺哪一条 + 改哪里」，它不写正文、不改稿、不润色；
+  提问：「产出是否偏离老板要求」就是它负责（role_title 可用 核对/质检/验收检查）；
 - 每个岗位给 est_cost（预估花费，累加不超过预算）；
 - emoji 只能从：🧭 🔍 📝 🧩 📊 📋 🎯 🎬 💬 🔎 📈 📚 🖼 里选；
 - kind 填 text 或 image（出图岗才填 image）；
@@ -1641,10 +1687,22 @@ task.title ≤ 18 字；task.goal 写清交付物与判断标准；task.accept �
 
 
 def _json_obj(txt):
-    m = re.search(r"\{.*\}", txt or "", re.S)
+    """模型输出里抓一段 JSON；被截断时按最后一个 } 补救一次。"""
+    m = re.search(r"\{.*", txt or "", re.S)
     if not m:
         raise RuntimeError("模型没给出 JSON")
-    return json.loads(m.group(0))
+    blob = m.group(0)
+    try:
+        return json.loads(blob)
+    except Exception:  # noqa: BLE001
+        pass
+    end = blob.rfind("}")
+    while end > 0:
+        try:
+            return json.loads(blob[: end + 1])
+        except Exception:  # noqa: BLE001
+            end = blob.rfind("}", 0, end)
+    raise RuntimeError("模型给的 JSON 不完整（可能被 max_tokens 截断）")
 
 
 def _qs(obj, limit=3):
@@ -1714,8 +1772,56 @@ def agency_draft(pid, text, answers, ttype, budget):
     txt, _a, _b, _c = call_model("deepseek-chat",
                                  [{"role": "system", "content": BUILD_SYS},
                                   {"role": "user", "content": user}],
-                                 temperature=0.4, max_tokens=1800)
-    return _json_obj(txt), cands
+                                 temperature=0.4, max_tokens=4200)
+    obj = _json_obj(txt)
+    obj = _ensure_checker(obj, cands)
+    return obj, cands
+
+
+CHECK_WORDS = ("核对", "质检", "验收", "检查", "偏离", "校验")
+
+
+def _ensure_checker(obj, cands):
+    """兜底：HR 忘了排核对岗时，替他补一个（岗位库优先，没有就现场建）。"""
+    team = [t for t in (obj.get("team") or []) if isinstance(t, dict)]
+    for t in team:
+        name = (t.get("role_title") or "")
+        duty = (t.get("duty") or "")
+        if any(w in name for w in CHECK_WORDS) or ("偏离" in duty):
+            return obj
+    pre = None
+    for c in cands:
+        if c["kind"] == "preset" and c.get("tag") == "审核":
+            pre = c
+            break
+    duty = ("只做一件事：把交付物逐条对照验收标准，指出「符合哪几条、不符合哪几条、缺什么、"
+            "该改哪一段」。不写正文、不改稿、不润色、不替别人下结论。")
+    slot = {
+        "role_title": "核对（偏离检查）",
+        "emoji": "🔎",
+        "kind": "text",
+        "duty": duty,
+        "input_spec": "交付物 + 验收标准（task.accept）",
+        "output_spec": "逐条比对清单：每条验收标准 → 符合/不符合 → 证据（原文位置）→ 修改建议",
+        "boundary": "不重写正文；不新增观点；不评价写作风格；不替上游补做缺失环节",
+        "reuse_emp_id": None,
+        "reuse_preset_id": (pre["id"] if pre else None),
+        "est_cost": 0.2,
+    }
+    if pre:
+        slot["role_title"] = "核对（%s）" % pre["title"]
+        slot["duty"] = (pre.get("duty") or duty)[:200]
+        slot["output_spec"] = pre.get("output_spec") or slot["output_spec"]
+    team.append(slot)
+    obj["team"] = team[:6]
+    order = [i for i in (obj.get("order") or range(len(team)))]
+    order = [i for i in order if i < len(obj["team"])]
+    if len(order) < len(obj["team"]):
+        order.append(len(obj["team"]) - 1)
+    obj["order"] = order
+    obj["note"] = ((obj.get("note") or "") +
+                   " 已自动补一个「核对岗」：最后一步专门检查产出有没有偏离要求。").strip()
+    return obj
 
 
 def agency_commit(pid, payload):
