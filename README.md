@@ -1,4 +1,4 @@
-# 小肥鱼 AI 公司 v6.2（桌面版）
+# 小肥鱼 AI 公司 v6.3（桌面版）
 
 一个人的 AI 公司：自己建岗位、按项目招人、派活给流水线、跟每个员工单独聊，最后把成品导出成 Word 或 Markdown；每一步花了多少钱都写在明面上。
 
@@ -248,3 +248,13 @@ python -m PyInstaller --noconfirm --clean --onefile --console ^
 - 任务状态新增 `over_budget`（列表徽标「超预算」）。
 
 接口：`POST /api/messages/{mid}/verdict`；`run_task` 增加 `start_idx` 参数。
+
+## 安装包（v6.3：真正的安装器）
+
+- `小肥鱼AI公司-安装包-v6.3.0.exe`（约 33 MB）：双击 → 下一步 → 完成，**不需要管理员权限**（装到 `%LOCALAPPDATA%\Programs\XiaoFeiYuAI`）。
+- 装完自动创建：开始菜单项（含「卸载」）、可选的桌面快捷方式、右下角托盘同前。
+- **卸载不丢数据**：卸载时若发现 `company.db`，先把它复制到桌面 `小肥鱼AI公司-数据备份-<时间>\`，再删程序目录（`images/` 需要的话手动复制）。
+- 中文安装界面（Inno Setup 6 + 社区简体中文语言包）。
+- 从源码重建：`ISCC.exe installer.iss`（需 Inno Setup 6；语言包放 `Languages\ChineseSimplified.isl`）。
+
+已知：没有代码签名，首次运行 SmartScreen 仍提示「更多信息 → 仍要运行」。
