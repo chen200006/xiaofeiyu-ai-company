@@ -56,7 +56,9 @@
   .rail .railfoot b{color:#e2e8f0;font-size:13px;font-variant-numeric:tabular-nums}
 
   .main{flex:1;min-width:0;padding:20px 24px 28px}
-  .topbar{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .topbar{display:flex;align-items:center;gap:10px;row-gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .topbar>*{flex:0 0 auto}
+  .topbar h1{white-space:nowrap}
   .topbar h1{margin:0;font-size:19px;letter-spacing:.2px}
   .chip{font-size:11.5px;padding:3px 9px;border-radius:20px;background:#e8edf9;color:#3b5bdb;
     border:1px solid #d8e2f8}
@@ -180,6 +182,12 @@
   .filecard .ft{flex:1;min-width:0}
   .filecard .ft b{font-size:13px;display:block}
   .filecard .ft span{font-size:11.5px;color:#64748b}
+  .macts{display:flex;gap:6px;align-items:center;margin:4px 0 2px}
+  .mini{font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);
+    background:#fff;color:#5a6b8c;cursor:pointer}
+  .mini:hover{background:#f2f6ff;border-color:#c7d7f5}
+  .mini.on{background:#e8f5ec;border-color:#9fd6b0;color:#237a44}
+  .mini.on.bad{background:#fdecec;border-color:#f3b0b0;color:#a3282a}
   .cmbar{display:flex;gap:8px;align-items:flex-end;margin-top:10px;padding-top:10px;
     border-top:1px solid var(--line)}
   .cmbar textarea{flex:1;min-height:44px;max-height:120px;resize:vertical;padding:9px 12px;
@@ -675,7 +683,7 @@ const money = n => (Number(n)||0).toFixed(3);
 const num = n => (Number(n)||0).toLocaleString("en-US");
 const em2 = x => String(x == null ? "" : x).replace(/\uFE0F/g, "");
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const STATUS = {pending:"待派",running:"干活中",waiting:"等你批",interrupted:"已中断",done:"已完成",
+const STATUS = {pending:"待派",running:"干活中",waiting:"等你批",interrupted:"已中断",over_budget:"超预算",done:"已完成",
                 failed:"失败",rejected:"被退回",over_budget:"超预算"};
 
 async function api(path, opt, timeoutMs){
@@ -886,6 +894,11 @@ function msgHTML(m){
         ${m.model==="deepseek-reasoner"?'<span class="badge" style="background:#ede9fe;color:#6d28d9">🧠</span>':""}</div>
       <div class="bub">${body}</div>
       ${thinkHTML(m)}
+      ${(m.kind==="reply"||m.kind==="deliverable") ? `<div class="macts">
+        <button class="mini ${m.verdict==="good"?"on":""}" data-good="${m.id}">👍 满意</button>
+        <button class="mini ${m.verdict==="bad"?"on bad":""}" data-bad="${m.id}">👎 重做这步</button>
+        ${m.verdict==="bad"?'<span class="hint" style="margin:0">已要求重做</span>':""}
+      </div>` : ""}
       <div class="foot">${cost}</div>
     </div>
   </div>`;
@@ -906,6 +919,20 @@ function chatChrome(){
     mem.innerHTML=names.slice(0,6).map(n=>`<span class="av" title="${esc(n)}">${avOf(n)}</span>`).join("");
     head.insertBefore(mem, head.querySelector(".spacer")||null);
   }
+  stream.querySelectorAll("[data-good],[data-bad]").forEach(btn=>{
+    if(btn.dataset.bound) return;
+    btn.dataset.bound="1";
+    btn.onclick = async () => {
+      const good = btn.dataset.good, bad = btn.dataset.bad;
+      const id = good || bad;
+      const verdict = good ? "good" : "bad";
+      try{
+        await postJSON("/api/messages/"+id+"/verdict", {verdict});
+        toast(verdict==="good" ? "记下了：这一步满意" : "已让它重做这一步（前面不重复花钱）");
+        setTimeout(()=>selectTask(S.cur), 900);
+      }catch(e){ toast(zhErr(e)); }
+    };
+  });
   // 底部输入条
   if(!$("#cmbar")){
     const bar=document.createElement("div");

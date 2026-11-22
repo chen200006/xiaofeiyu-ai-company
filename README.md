@@ -1,4 +1,4 @@
-# 小肥鱼 AI 公司 v6.1（桌面版）
+# 小肥鱼 AI 公司 v6.2（桌面版）
 
 一个人的 AI 公司：自己建岗位、按项目招人、派活给流水线、跟每个员工单独聊，最后把成品导出成 Word 或 Markdown；每一步花了多少钱都写在明面上。
 
@@ -236,3 +236,15 @@ python -m PyInstaller --noconfirm --clean --onefile --console ^
 接口：`GET /api/backups`（列表 + 库检查）、`POST /api/backups`（立即备份）、`POST /api/backups/restore {name}`（回滚）。
 
 已知未做（下一步的行星们）：安装包、代码签名、自动更新、满意/重跑这一步的反馈闭环、自动化测试。
+
+## 质量包（v6.2：不满意就重做那一步）
+
+- **👍 满意 / 👎 重做这步**：每条员工产出下面都有两个按钮。
+  - 👍 记一笔（`messages.verdict = 'good'`），等于给这一步盖章。
+  - 👎 立刻从这一步起重跑（`POST /api/messages/{id}/verdict`，body `{"verdict":"bad"}`），**前面的步骤不重跑、不重复花钱**，沿用已有产出作为上游。
+  - 重做时把该步及之后步骤重置为 pending，`run_task(task_id, start_idx=idx)` 跳过前面所有步。
+- **预算改成硬上限**：每一步开跑前先估这一步的钱（取已完成步骤的平均花费），
+  「已花 + 预估 > 预算」就停，任务标 `over_budget`，群里说明「已花多少、还差多少、剩几步没跑」。
+- 任务状态新增 `over_budget`（列表徽标「超预算」）。
+
+接口：`POST /api/messages/{mid}/verdict`；`run_task` 增加 `start_idx` 参数。

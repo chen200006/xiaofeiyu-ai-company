@@ -27,7 +27,7 @@ else:
     BASE = os.path.dirname(os.path.abspath(__file__))
     RES = BASE
 
-APP_VERSION = "6.1.0"
+APP_VERSION = "6.2.0"
 DB_PATH = os.path.join(BASE, "company.db")
 UI_PATH = os.path.join(RES, "ui", "index.html")
 IMAGE_DIR = os.path.join(BASE, "images")
@@ -467,6 +467,11 @@ def init_db():
         c.execute("INSERT INTO projects(name,kind,goal,created_at) VALUES(?,?,?,?)",
                   ("我的第一个项目", "论文报告", "先拿一个真实任务试试", now()))
     c.commit()
+    mcols = [r[1] for r in c.execute("PRAGMA table_info(messages)").fetchall()]
+    if "verdict" not in mcols:
+        c.execute("ALTER TABLE messages ADD COLUMN verdict TEXT DEFAULT ''")
+    c.commit()
+
     normalize_emoji(c)
     c.close()
     try:
@@ -861,7 +866,7 @@ def task_brief(task):
 # ---------------------------------------------------------------- 引擎
 
 
-def run_task(task_id):
+def run_task(task_id, start_idx=0):
     c = db()
     task = c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     steps = c.execute("SELECT * FROM steps WHERE task_id=? ORDER BY idx", (task_id,)).fetchall()
@@ -878,15 +883,27 @@ def run_task(task_id):
     best = {"text": "", "n": 0}
     spent = 0.0
     for st in steps:
+        if st["idx"] < start_idx:
+            draft += (st["output"] or "") + "\n\n"
+            if st["output"] and len(st["output"]) > best["n"]:
+                best = {"text": st["output"], "n": len(st["output"])}
+            continue
         emp = emps.get(st["emp_id"])
         if not emp:
             set_step(st["id"], status="failed")
             continue
 
-        if spent >= float(task["budget"] or 5):
+        budget = float(task["budget"] or 5)
+        done_cost = [float(r["cost"] or 0) for r in steps if r["idx"] < st["idx"]]
+        avg = (sum(done_cost) / len(done_cost)) if done_cost else 0.0
+        est = max(0.02, avg if avg > 0 else 0.03)
+        if spent + est > budget + 1e-9:
             set_task(task_id, status="over_budget")
+            left = len([x for x in steps if x["idx"] >= st["idx"]])
             log_msg(task_id, None, "系统", "全体", "note",
-                    "已花 %.2f 元，到预算上限，停工。" % spent)
+                    "预算 %.2f 元不够了：已花 %.2f，这一步预计还要 %.2f，"
+                    "剩下 %d 步没跑。要接着跑就把预算调高再点「再跑一遍」。"
+                    % (budget, spent, est, left))
             return
 
         if st["needs_approval"]:
@@ -1087,6 +1104,21 @@ def set_step(step_id, **kw):
 # ---------------------------------------------------------------- HTTP
 
 
+def redo_from(task_id, start_idx):
+    """老板对某一步不满意：从这一步起重跑，前面的产出沿用，不重复花钱。"""
+    c = db()
+    c.execute("UPDATE steps SET status='pending', output=NULL, tokens_in=0, tokens_out=0,"
+              " cost=0, started_at=NULL, finished_at=NULL"
+              " WHERE task_id=? AND idx>=?", (task_id, start_idx))
+    c.commit()
+    c.close()
+    log_msg(task_id, None, "系统", "全体", "note",
+            "老板点了重做：从第 %d 步起重跑，前面 %d 步的产出沿用，不重复花钱。"
+            % (start_idx + 1, start_idx))
+    threading.Thread(target=run_task, args=(task_id,), kwargs={"start_idx": start_idx},
+                     daemon=True).start()
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "AICompany/2.0"
 
@@ -1184,6 +1216,7 @@ class H(BaseHTTPRequestHandler):
             if not r:
                 return self.send(404, {"error": "没有这条知识"})
             return self.send(200, {"item": dict(r)})
+
 
         if path == "/api/backups":
             ok, detail = db_integrity()
@@ -1392,6 +1425,29 @@ class H(BaseHTTPRequestHandler):
                     v["event"].set()
                     acted = "reject"
             return self.send(200, {"ok": True, "acted": acted})
+
+        if path.startswith("/api/messages/") and path.endswith("/verdict"):
+            try:
+                mid = int(path.rstrip("/").split("/")[3])
+            except Exception:  # noqa: BLE001
+                return self.send(400, {"error": "消息号不对"})
+            verdict = (b.get("verdict") or "").strip()
+            if verdict not in ("good", "bad", ""):
+                return self.send(400, {"error": "只能是 good / bad"})
+            c = db()
+            row = c.execute("SELECT * FROM messages WHERE id=?", (mid,)).fetchone()
+            if not row:
+                c.close()
+                return self.send(404, {"error": "没有这条消息"})
+            c.execute("UPDATE messages SET verdict=? WHERE id=?", (verdict, mid))
+            c.commit()
+            step = (c.execute("SELECT * FROM steps WHERE id=?", (row["step_id"],)).fetchone()
+                    if row["step_id"] else None)
+            c.close()
+            if verdict == "bad" and step:
+                redo_from(row["task_id"], step["idx"])
+                return self.send(200, {"ok": True, "redo": step["idx"]})
+            return self.send(200, {"ok": True})
 
         if path == "/api/backups":
             name = backup_db("manual")
