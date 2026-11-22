@@ -27,7 +27,7 @@ else:
     BASE = os.path.dirname(os.path.abspath(__file__))
     RES = BASE
 
-APP_VERSION = "6.4.0"
+APP_VERSION = "6.4.1"
 DB_PATH = os.path.join(BASE, "company.db")
 UI_PATH = os.path.join(RES, "ui", "index.html")
 IMAGE_DIR = os.path.join(BASE, "images")
@@ -1522,10 +1522,16 @@ class H(BaseHTTPRequestHandler):
 
         if path == "/api/employees":
             c = db()
+            try:
+                _reject_builtin(b.get("title") or "员工")
+            except ValueError as e:
+                c.close()
+                return self.send(400, {"ok": False, "error": str(e)})
             cur = c.execute(
                 "INSERT INTO employees(project_id,name,title,emoji,duty,input_spec,output_spec,"
                 "model,memory,created_at,kind,boundary) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (b.get("project_id"), b.get("name") or "新人", b.get("title") or "员工",
+                (b.get("project_id"), b.get("name") or "新人",
+                 b.get("title") or "员工",
                  b.get("emoji") or "🧑", b.get("duty", ""), b.get("input_spec", ""),
                  b.get("output_spec", ""), b.get("model", "deepseek-chat"),
                  int(b.get("memory", 1)), now(), b.get("kind") or "text",
@@ -1551,6 +1557,12 @@ class H(BaseHTTPRequestHandler):
                 fields = ["name", "title", "emoji", "duty", "input_spec",
                           "output_spec", "model", "memory", "kind", "boundary"]
                 sets, vals = [], []
+                if "title" in b:
+                    try:
+                        _reject_builtin(b["title"])
+                    except ValueError as e:
+                        c.close()
+                        return self.send(400, {"ok": False, "error": str(e)})
                 for f in fields:
                     if f in b:
                         sets.append(f + "=?")
@@ -1865,6 +1877,7 @@ def _pick_port(start):
 
 
 # ---------- 指挥中心 / HR ----------
+BUILTIN_TITLES = ("指挥中心", "HR", "系统", "老板")
 TASK_TYPES = {
     "paper": "报告/论文", "article": "公众号/文案", "video": "短视频脚本",
     "image": "图/海报", "plan": "方案/策划", "code": "代码/脚本",
@@ -1928,6 +1941,13 @@ task.title ≤ 18 字；task.goal 写清交付物与判断标准；task.accept �
 """
 
 
+def _reject_builtin(title):
+    t = (title or "").strip()
+    if t in BUILTIN_TITLES:
+        raise ValueError("「%s」是内置岗位，不用招" % t)
+    return t
+
+
 def _json_obj(txt):
     """模型输出里抓一段 JSON；被截断时按最后一个 } 补救一次。"""
     m = re.search(r"\{.*", txt or "", re.S)
@@ -1958,10 +1978,12 @@ def _qs(obj, limit=3):
 
 def agency_candidates(pid):
     c = db()
-    emps = c.execute("SELECT id,title,duty FROM employees WHERE project_id=? ORDER BY id",
-                     (pid,)).fetchall()
-    pres = c.execute("SELECT id,title,tag,family FROM presets"
-                     " ORDER BY mine DESC, family, id").fetchall()
+    emps = [r for r in c.execute(
+        "SELECT id,title,duty FROM employees WHERE project_id=? ORDER BY id",
+        (pid,)).fetchall() if (r["title"] or "") not in BUILTIN_TITLES]
+    pres = [r for r in c.execute(
+        "SELECT id,title,tag,family FROM presets ORDER BY mine DESC, family, id"
+    ).fetchall() if (r["title"] or "") not in BUILTIN_TITLES]
     c.close()
     lines = []
     for r in emps:

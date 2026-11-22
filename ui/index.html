@@ -410,6 +410,10 @@
     overflow-y:auto !important;max-height:none !important}
   #taskDetail .cmbar{flex:0 0 auto}
   .dockpill{top:auto !important;bottom:20px !important;right:20px !important}
+
+  .card.emp.builtin{background:#f7fbff;border-color:#dfeaf7}
+  .card.emp.builtin .avatar{background:#e8f1fb}
+  .badge.builtin-badge{background:#eef5ff;color:#3b6ea5;border:1px solid #d8e7f8}
 </style>
 </head>
 <body>
@@ -836,8 +840,23 @@ function renderProj(){
     : '<option value="0">（还没有项目）</option>';
 }
 
+const BUILTIN_ROLES = [
+  {emoji:"🧭", title:"指挥中心", duty:"判断题型、把需求翻成能派的活、跟你确认；不写正文。"},
+  {emoji:"👔", title:"HR", duty:"按预算和职责在岗位库挑人；挑不到就现场建一个，并且必配核对岗。"},
+  {emoji:"⚙️", title:"系统", duty:"开工、派活、交付完成这些状态播报，不花钱。"}
+];
+
 function renderTeam(){
-  const cards = S.employees.map(e=>`
+  const bcards = BUILTIN_ROLES.map(r=>`
+    <div class="card emp builtin">
+      <div class="head">
+        <div class="avatar">${r.emoji}</div>
+        <div class="who"><b>${r.title}</b><span>内置</span></div>
+      </div>
+      <div class="duty">${r.duty}</div>
+      <div class="tags"><span class="badge builtin-badge">内置岗位 · 不用招也不能开除</span></div>
+    </div>`).join("");
+  const cards = bcards + S.employees.map(e=>`
     <div class="card emp">
       <div class="head">
         <div class="avatar">${esc(em2(e.emoji)||"🧑")}</div>
@@ -1016,7 +1035,8 @@ function chatChrome(){
   // 成员头像条：塞进标题行末尾
   const head=document.querySelector("#taskDetail .streamhead");
   if(head && !head.querySelector(".members")){
-    const names=[...new Set((d.steps||[]).map(x=>x.emp_title).filter(Boolean))];
+    const names=[...new Set(["指挥中心","HR",
+      ...(d.steps||[]).map(x=>x.emp_title).filter(Boolean)])];
     const mem=document.createElement("span");
     mem.className="members";
     mem.title="群成员：" + names.join("、");
