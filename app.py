@@ -27,7 +27,7 @@ else:
     BASE = os.path.dirname(os.path.abspath(__file__))
     RES = BASE
 
-APP_VERSION = "6.2.0"
+APP_VERSION = "6.4.0"
 DB_PATH = os.path.join(BASE, "company.db")
 UI_PATH = os.path.join(RES, "ui", "index.html")
 IMAGE_DIR = os.path.join(BASE, "images")

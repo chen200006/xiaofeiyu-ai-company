@@ -306,6 +306,110 @@
     border-radius:11px;font-size:13px;opacity:0;transform:translateY(6px);transition:.2s;z-index:99;
     box-shadow:0 12px 30px -10px rgba(9,14,23,.6)}
   .toast.on{opacity:1;transform:translateY(0)}
+
+  /* ================= 微信风主题（v6.4） ================= */
+  .nav button{border-radius:6px}
+  .nav button.on{background:#1f1f1f;color:#07c160}
+  .nav button.on b{color:#07c160}
+
+  /* 会话列表 + 聊天区 */
+  .taskwrap{gap:0;border:1px solid #e3e3e3;border-radius:6px;overflow:hidden;
+    grid-template-columns:286px minmax(0,1fr);background:#f5f5f5}
+  #taskList, #taskList .card{background:#ededed}
+  #taskList{border-right:1px solid #e0e0e0;max-height:calc(100vh - 250px);overflow:auto}
+  #taskList .card{border:0;box-shadow:none;border-radius:0;padding:0}
+  #taskList .taskitem{border-radius:0;padding:11px 12px;gap:10px;border-bottom:1px solid #e4e4e4}
+  #taskList .taskitem:hover{background:#e4e4e4}
+  #taskList .taskitem.on{background:#d8d8d8}
+  #taskList .taskitem .av{width:40px;height:40px;border-radius:5px;border:0;font-size:20px;
+    background:#cfd9e6}
+  #taskList .taskitem b, #taskList .taskitem .tx b{font-size:14px;color:#191919;font-weight:500}
+  #taskList .taskitem .pv, #taskList .taskitem small{color:#a8a8a8;font-size:12px}
+  #taskList .taskitem .tm{color:#b2b2b2;font-size:11.5px}
+
+  #taskDetail{border:0;border-radius:0;box-shadow:none;background:#f5f5f5;padding:0;
+    display:flex;flex-direction:column;min-height:calc(100vh - 250px)}
+  #taskDetail .streamhead{background:#f5f5f5;border-bottom:1px solid #e6e6e6;
+    margin:0;padding:12px 16px;gap:10px}
+  #taskDetail .streamhead h3{font-size:15px;color:#191919;font-weight:600}
+
+  .stream.chat{background:#f5f5f5;max-height:none;flex:1;overflow:auto;padding:16px 18px 8px}
+  .cm{margin-bottom:16px;gap:9px}
+  .cm .av{width:38px;height:38px;border-radius:5px;border:0;font-size:19px;
+    background:#dfe6ef;color:#4a5568}
+  .cm .nm{margin-bottom:4px}
+  .cm .nm b{color:#8a8a8a;font-size:12px;font-weight:400}
+  .cm.me .nm{display:none}
+  .cm .bub{background:#fff;border:0;border-radius:6px;padding:9px 12px;color:#191919;
+    font-size:14px;line-height:1.75;box-shadow:0 1px 0 rgba(0,0,0,.03);
+    max-width:min(640px,calc(100% - 90px))}
+  .cm.me .bub{background:#95ec69;color:#111}
+  .cm.me{flex-direction:row-reverse}
+  .cm.sys{justify-content:center;margin:10px 0}
+  .cm.sys .av{display:none}
+  .cm.sys .nm{display:none}
+  .cm.sys .bub{background:#e6e6e6;color:#8a8a8a;font-size:12px;border-radius:4px;
+    padding:4px 10px;max-width:76%;text-align:center;box-shadow:none}
+  .cm.sys .body{display:flex;justify-content:center;width:100%}
+  .cm .think{border-radius:6px;background:#f0f0f0;border-color:#e2e2e2}
+
+  .cmbar{background:#fafafa;border-top:1px solid #e6e6e6;margin:0;padding:8px 12px;gap:8px}
+  .cmbar textarea{border:0;background:transparent;min-height:38px;max-height:110px;
+    font-size:14px;padding:8px 4px;box-shadow:none}
+  .cmbar textarea:focus{outline:none;border:0}
+  .cmbar .btn.primary{background:#07c160;border-color:#07c160;color:#fff;border-radius:5px;
+    height:32px;padding:0 16px;font-size:13px;align-self:flex-end;margin-bottom:3px}
+  .cmbar .btn.primary:hover{background:#06ad56}
+
+  .macts{gap:8px;margin-top:6px}
+  .mini{border-radius:4px;font-size:12px;padding:3px 8px;background:#fff;border-color:#e2e2e2;
+    color:#7a7a7a}
+  .mini.on{background:#e8f7ee;border-color:#9fd6b0;color:#0a8a44}
+  .mini.on.bad{background:#fdecec;border-color:#f0b4b4;color:#c0392b}
+
+  .filecard{border-radius:6px;border-color:#e6e6e6;background:#fff}
+  .approval{border-radius:6px}
+
+  /* 气泡小尖角 + 选中态 */
+  .cm .bub{position:relative}
+  .cm:not(.me):not(.sys) .bub::before{content:"";position:absolute;left:-5px;top:13px;
+    width:0;height:0;border:5px solid transparent;border-right-color:#fff;border-left:0}
+  .cm.me .bub::before{content:"";position:absolute;right:-5px;top:13px;
+    width:0;height:0;border:5px solid transparent;border-left-color:#95ec69;border-right:0}
+  #taskList .taskitem.on{background:#d8d8d8 !important}
+  #taskList .taskitem.on b{color:#111}
+  #taskDetail .streamhead{border-bottom:1px solid #e6e6e6}
+  #taskDetail .streamhead .btn{padding:5px 10px;font-size:12.5px;border-radius:4px}
+
+  /* 聊天区固定高度、内部滚动（像微信那样，不整页滚） */
+  #taskDetail{height:calc(100vh - 210px);overflow:hidden}
+  #taskDetail > .body, #taskDetail .detailbody{min-height:0}
+  .stream.chat{min-height:0;overflow-y:auto;overflow-x:hidden}
+  .stream.chat::-webkit-scrollbar{width:8px}
+  .stream.chat::-webkit-scrollbar-thumb{background:#cfcfcf;border-radius:4px}
+  #taskList::-webkit-scrollbar{width:6px}
+  #taskList::-webkit-scrollbar-thumb{background:#c9c9c9;border-radius:3px}
+
+  /* 让聊天区真正可滚：flex 基准 0 + 允许收缩 */
+  #taskDetail{display:flex;flex-direction:column}
+  #taskDetail .stream.chat{flex:1 1 0 !important;min-height:0 !important;
+    overflow-y:auto !important;max-height:none !important}
+  #taskDetail .cmbar{flex:0 0 auto}
+  /* 看板胶囊挪到右下，别压顶栏 */
+  .dockpill{top:auto !important;bottom:20px !important;right:20px !important}
+
+  /* 真正的微信式布局：卡片自己当纵向 flex，聊天区吃掉剩余高度并内部滚动 */
+  #taskDetail{height:calc(100vh - 200px);overflow:hidden;
+    display:flex;flex-direction:column}
+  #taskDetail .detailwrap{flex:1 1 0;min-height:0;display:grid;
+    grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:0}
+  #taskDetail .detailwrap > .card{display:flex;flex-direction:column;min-height:0;
+    height:100%;border:0;border-radius:0;box-shadow:none;background:#f5f5f5;padding:0}
+  #taskDetail .streamhead{flex:0 0 auto}
+  #taskDetail #stream.stream.chat{flex:1 1 0 !important;min-height:0 !important;
+    overflow-y:auto !important;max-height:none !important}
+  #taskDetail .cmbar{flex:0 0 auto}
+  .dockpill{top:auto !important;bottom:20px !important;right:20px !important}
 </style>
 </head>
 <body>
@@ -1031,10 +1135,10 @@ function renderDetail(){
         </div>
       </div>`;
     $("#pillCost").textContent = money(t.total_cost || 0);
-    const collapsed = localStorage.getItem("dockCollapsed") === "1";
+    const collapsed = localStorage.getItem("dockCollapsed") !== "0";
     dock.hidden = collapsed;
     pill.hidden = !collapsed;
-    if (S.view === "tasks") document.body.classList.add("dockon");
+    document.body.classList.toggle("dockon", !collapsed);
   }
 
 $("#btnRun").onclick = async () => {
@@ -1156,7 +1260,7 @@ function setView(v){
   const dk = $("#dock"), pl = $("#dockPill");
   if (dk && pl) {
     const on = v === "tasks" && S.detail;
-    const collapsed = localStorage.getItem("dockCollapsed") === "1";
+    const collapsed = localStorage.getItem("dockCollapsed") !== "0";
     dk.hidden = !on || collapsed;
     pl.hidden = !on || !collapsed;
     document.body.classList.toggle("dockon", !!(on && !collapsed));

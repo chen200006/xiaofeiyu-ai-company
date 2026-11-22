@@ -258,3 +258,10 @@ python -m PyInstaller --noconfirm --clean --onefile --console ^
 - 从源码重建：`ISCC.exe installer.iss`（需 Inno Setup 6；语言包放 `Languages\ChineseSimplified.isl`）。
 
 已知：没有代码签名，首次运行 SmartScreen 仍提示「更多信息 → 仍要运行」。
+
+## 界面（v6.4：任务页改成微信那种）
+
+- 左栏会话列表：灰底、40px 方形头像、标题 + 最后一句 + 状态/花费，选中态灰块，右键一样的读法。
+- 右侧聊天区：浅灰背景、白色气泡带小尖角，老板发言在右边（微信绿 `#95ec69`），系统消息灰底居中，员工名字在气泡上方小灰字。
+- 底部输入条：白底、无边框输入区、绿色「发送」（`#07c160`），Enter 发送、Shift+Enter 换行。
+- 聊天区**固定高度、内部滚动**，不再整页滚；看板默认收起成右下角胶囊「看板 x 元」，点开才占位置。
