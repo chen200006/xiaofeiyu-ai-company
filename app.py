@@ -27,7 +27,7 @@ else:
     BASE = os.path.dirname(os.path.abspath(__file__))
     RES = BASE
 
-APP_VERSION = "6.4.1"
+APP_VERSION = "6.5.0"
 DB_PATH = os.path.join(BASE, "company.db")
 UI_PATH = os.path.join(RES, "ui", "index.html")
 IMAGE_DIR = os.path.join(BASE, "images")
@@ -40,6 +40,23 @@ DEEP_THINK = os.environ.get("AC_DEEP", "1") != "0"
 MODEL_CHAT = "deepseek-chat"
 MODEL_DEEP = "deepseek-reasoner"
 PRICES = {MODEL_CHAT: (2.0, 3.0), MODEL_DEEP: (4.0, 16.0)}
+# ---- 分层模型：贵的想，便宜的写 ----
+DEEP_ROLE_WORDS = ("审核", "审稿", "核对", "挑错", "校验", "质检", "审查", "验收", "评审")
+
+
+def tier_is_deep(emp):
+    """审核类岗位走 reasoner，执行类岗位走 chat（省钱 60-70%）。"""
+    try:
+        tier = (emp["tier"] or "")
+    except Exception:
+        tier = ""
+    if tier == "deep":
+        return True
+    if tier == "fast":
+        return False
+    txt = (emp["title"] or "") + (emp["duty"] or "")
+    return any(w in txt for w in DEEP_ROLE_WORDS)
+
 _TLS = threading.local()
 API_BASE = "https://api.deepseek.com/chat/completions"
 
@@ -451,6 +468,8 @@ def init_db():
         c.execute("ALTER TABLE messages ADD COLUMN model TEXT DEFAULT ''")
     if "reason" not in [r[1] for r in c.execute("PRAGMA table_info(messages)").fetchall()]:
         c.execute("ALTER TABLE messages ADD COLUMN reason TEXT DEFAULT ''")
+    if "tier" not in cols("employees"):
+        c.execute("ALTER TABLE employees ADD COLUMN tier TEXT DEFAULT ''")
     if "boundary" not in cols("employees"):
         c.execute("ALTER TABLE employees ADD COLUMN boundary TEXT DEFAULT ''")
     if "kind" not in cols("employees"):
@@ -668,7 +687,7 @@ def log_msg(task_id, step_id, sender, receiver, kind, content,
 def call_model(model, messages, temperature=0.7, max_tokens=4096, deep=None):
     used = model if model in PRICES else MODEL_CHAT
     if deep is None:
-        deep = DEEP_THINK and used != MODEL_DEEP
+        deep = DEEP_THINK and used != MODEL_DEEP and getattr(_TLS, "force_deep", True)
     if deep:
         used = MODEL_DEEP
     body = {"model": used, "messages": messages, "stream": False,
@@ -944,6 +963,7 @@ def run_task(task_id, start_idx=0):
             user = task_brief(task) + "\n\n上游交来的材料：\n" + draft + "\n\n请接着往下做。"
         set_step(st["id"], input_text=user)
         expanded = False
+        _TLS.force_deep = tier_is_deep(emp)
         log_msg(task_id, st["id"], "系统", emp["title"], "instruction", user)
 
         try:
@@ -1051,7 +1071,42 @@ def run_task(task_id, start_idx=0):
     set_task(task_id, status="done", finished_at=now())
     log_msg(task_id, None, "系统", "老板", "deliverable", deliver)
     log_msg(task_id, None, "系统", "老板", "note", "交付完成，共花 %.3f 元。" % spent)
+    if os.environ.get("AC_REVIEW2", "1") != "0" and len(deliver) > 200:
+        try:
+            log_msg(task_id, None, "系统", "系统", "note", "第二道审查：换个模型挑错…")
+            crit, _ci, _co, _cm = call_model(MODEL_CHAT, [
+                {"role": "system", "content": "你是外部审稿人，只挑错，不重写，不给建议以外的正文。"},
+                {"role": "user", "content": "验收标准：%s\n\n稿子：\n%s\n\n只输出问题清单，每条一行，最多 6 条；没有硬伤就只输出「未见明显问题」。" % ((task["accept"] or "无"), deliver[:6000])},
+            ], temperature=0.3, max_tokens=1200, deep=False)
+            log_msg(task_id, None, "系统", "系统", "note", "第二道审查（换模型）：\n" + (crit or "")[:1500])
+        except Exception as exc:  # noqa: BLE001
+            log_msg(task_id, None, "系统", "系统", "note", "第二道审查失败：%s" % str(exc)[:120])
 
+
+def watchdog_loop():
+    """监工：每 5 分钟看一眼，15 分钟没动静就喊一声（同一任务只喊一次）。"""
+    seen = {}
+    while True:
+        time.sleep(300)
+        try:
+            c = db()
+            rows = c.execute("SELECT id,title FROM tasks WHERE status='running'").fetchall()
+            for r in rows:
+                last = c.execute("SELECT id,ts FROM messages WHERE task_id=? ORDER BY id DESC LIMIT 1",
+                                 (r["id"],)).fetchone()
+                if not last:
+                    continue
+                try:
+                    t0 = time.mktime(time.strptime(last["ts"], "%Y-%m-%d %H:%M:%S"))
+                except Exception:  # noqa: BLE001
+                    continue
+                if time.time() - t0 > 900 and seen.get(r["id"]) != last["id"]:
+                    seen[r["id"]] = last["id"]
+                    log_msg(r["id"], None, "系统", "系统", "note",
+                            "监工：这单超过 15 分钟没有新动静，可能卡住了。可以点「再跑一遍」，或把预算调高。")
+            c.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 def reply_rows(task_id):
     c = db()
@@ -2172,6 +2227,7 @@ def agency_commit(pid, payload):
     return {"task_id": tid, "staffed": made, "order": order}
 
 def main():
+    threading.Thread(target=watchdog_loop, daemon=True).start()
     global PORT
     init_db()
     if not API_KEY:
