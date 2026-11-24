@@ -1,9 +1,9 @@
-; 小肥鱼 AI 公司 · 安装脚本（Inno Setup 6）
+﻿; 小肥鱼 AI 公司 · 安装脚本（Inno Setup 6）
 ; 编译：ISCC.exe installer.iss
 ; 特点：装到用户目录（不需要管理员）、开始菜单 + 桌面快捷方式、卸载时先备份数据
 
 #define MyAppName "小肥鱼 AI 公司"
-#define MyAppVersion "6.3.0"
+#define MyAppVersion "6.5.0"
 #define MyAppExeName "小肥鱼AI公司.exe"
 
 [Setup]
@@ -73,3 +73,4 @@ begin
     end;
   end;
 end;
+
